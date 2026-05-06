@@ -185,6 +185,11 @@ docker compose logs -f v8-session-mgr
 
 ## Документация
 
+- [`docs/architecture/STACK_OVERVIEW.md`](docs/architecture/STACK_OVERVIEW.md) —
+  полная архитектурная схема стека: транспортное ядро (Rust addin) →
+  devkit BSL (`onec-client-mcp-devkit`) → прикладные расширения
+  (`test_client`, `VAExtension`, YaxUnit-runner) → менеджер → AI-агент.
+  Mermaid-диаграмма + lifecycle сессии + таблица ответственностей слоёв.
 - `docs/decisions/` — архитектурные решения (ADR). Релевантные для
   текущего менеджера: ADR-0018 (WS-туннель), ADR-0019 (дедупликация
   тулов), ADR-0020 (`SessionLaunchParamsCarrier`), ADR-0021 (per-session
