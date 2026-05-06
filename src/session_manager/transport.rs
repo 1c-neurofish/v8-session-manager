@@ -32,6 +32,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::model::McpSessionManagerConfig;
 use crate::session_manager::connection::ConnectionHandle;
+use crate::session_manager::ping::{spawn_app_ping_task, AppPingConfig};
 use crate::session_manager::protocol::{
     error_codes, methods, EmptyResult, HeartbeatPayload, Id, JsonRpcError, SessionRegisterParams,
     SessionRegisterResult, SessionToolsChangedParams, WireMessage,
@@ -317,6 +318,21 @@ async fn handle_request(
 ) -> Result<(), ConnectionError> {
     match method.as_str() {
         methods::SESSION_REGISTER => {
+            // Один WS-коннект = одна сессия. Повторный session.register
+            // на том же соединении — нарушение протокола: первый register
+            // успел заспаунить ping-task и проставить identity, повторный
+            // overwrite перевёл бы первую сессию в orphan-состояние
+            // (ping-task на чужом ConnectionHandle, mark_disconnected при
+            // обрыве WS затронет только последнюю identity).
+            if peer.identity().is_some() {
+                send_error(
+                    tx,
+                    id,
+                    error_codes::INVALID_REQUEST,
+                    "session already registered on this connection".to_owned(),
+                );
+                return Ok(());
+            }
             let parsed: SessionRegisterParams = match serde_json::from_value(params) {
                 Ok(p) => p,
                 Err(err) => {
@@ -341,7 +357,7 @@ async fn handle_request(
                         .unwrap_or(0);
                     peer.set(client_uid.clone(), generation);
                     let result = SessionRegisterResult {
-                        session_id: client_uid,
+                        session_id: client_uid.clone(),
                         server_version: state.server_version.as_ref().clone(),
                         heartbeat_interval_ms: state.config.heartbeat_interval_ms,
                         idle_timeout_secs: state.config.idle_timeout_secs,
@@ -352,6 +368,21 @@ async fn handle_request(
                         id,
                         result: Ok(value),
                     });
+                    // Application-level ping: liveness BSL event-loop. WS
+                    // ping/pong от tungstenite не покрывают зависание
+                    // обработчика 1С. Generation-aware: на soft reconnect
+                    // старая task завершится по `Disconnected` (старый
+                    // ConnectionHandle уже drained), новая стартует здесь.
+                    spawn_app_ping_task(
+                        Arc::clone(connection),
+                        Arc::clone(&state.registry),
+                        client_uid,
+                        generation,
+                        AppPingConfig::from_ms(
+                            state.config.app_ping_interval_ms,
+                            state.config.app_ping_timeout_ms,
+                        ),
+                    );
                 }
                 Err(RegisterError::UidCollision(uid)) => {
                     send_error(
@@ -474,6 +505,10 @@ mod tests {
             idle_timeout_secs: 1800,
             reconnection_grace_secs: 1,
             graceful_kill_grace_ms: 5_000,
+            // Тесты транспорта не зависят от ping-инициатора. Отключаем,
+            // чтобы ping-task не дёргала фейковый ConnectionHandle.
+            app_ping_interval_ms: 0,
+            app_ping_timeout_ms: 0,
         }
     }
 
@@ -593,6 +628,46 @@ mod tests {
         }
         ws1.close(None).await.ok();
         ws2.close(None).await.ok();
+        running.shutdown();
+    }
+
+    #[tokio::test]
+    async fn second_register_on_same_ws_is_rejected() {
+        // Защита от orphan-сессий: повторный session.register на том же
+        // WS-коннекте должен быть отклонён, иначе первый register оставит
+        // в реестре сессию с ping-task на чужом ConnectionHandle —
+        // mark_disconnected при разрыве заденет только последнюю identity.
+        let (registry, running, url) = boot().await;
+        let mut ws = connect(&url).await;
+        ws.send(WsMessage::Text(
+            register_text("uid-first", "client", "a").into(),
+        ))
+        .await
+        .unwrap();
+        let _ = next_text(&mut ws).await;
+        assert_eq!(registry.len(), 1);
+
+        // Второй register на ТОМ же WS под другим uid.
+        ws.send(WsMessage::Text(
+            register_text("uid-second", "client", "b").into(),
+        ))
+        .await
+        .unwrap();
+        let resp = next_text(&mut ws).await;
+        let parsed = WireMessage::parse(&resp).unwrap();
+        match parsed {
+            WireMessage::Response { result, .. } => {
+                let err = result.expect_err("invalid_request");
+                assert_eq!(err.code, error_codes::INVALID_REQUEST);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        // В реестре остаётся только первая сессия.
+        assert_eq!(registry.len(), 1);
+        assert!(registry.get("uid-first").is_some());
+        assert!(registry.get("uid-second").is_none());
+
+        ws.close(None).await.ok();
         running.shutdown();
     }
 

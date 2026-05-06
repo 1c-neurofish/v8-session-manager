@@ -166,6 +166,8 @@ mod tests {
             idle_timeout_secs: 1800,
             reconnection_grace_secs: 30,
             graceful_kill_grace_ms: 5_000,
+            app_ping_interval_ms: 0,
+            app_ping_timeout_ms: 0,
         };
         let running = transport::start(Arc::clone(&registry), config, "v0-test")
             .await

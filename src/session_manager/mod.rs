@@ -16,6 +16,7 @@ pub mod lifecycle;
 pub mod management;
 pub mod metrics;
 pub mod notify;
+pub mod ping;
 pub mod protocol;
 pub mod registry;
 pub mod router;
