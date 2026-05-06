@@ -8,8 +8,10 @@ JSON Schema, описывающие WS JSON‑RPC 2.0 контракт межд�
 - `messages.schema.json` — единая schema со всеми сообщениями этапа 1 в
   `$defs`. Покрывает:
   - JSON‑RPC envelope (request / response / notification / error);
-  - control‑plane: `session.register`, `session.heartbeat`, `session.bye`,
+  - control‑plane: `session.register`, `session.bye`,
     `session.tools_changed`, `ping`;
+  - liveness: WS protocol-level Ping/Pong (RFC 6455), application-level
+    heartbeat не используется.
   - вспомогательные типы: `tool-descriptor`.
 
 ## Эволюция

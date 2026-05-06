@@ -4,9 +4,10 @@
 //! `spec/protocol/messages.schema.json` (этап 1).
 //!
 //! Каждый WS Text Frame — один JSON‑объект. Поток сообщений двунаправленный:
-//! клиент шлёт `session.register`/`session.heartbeat`/`session.bye`/
-//! `session.tools_changed`, менеджер шлёт `ping` (опционально, в дополнение
-//! к WS ping/pong).
+//! клиент шлёт `session.register`/`session.bye`/`session.tools_changed`,
+//! менеджер шлёт `tool.call`/`tool.cancel`/`session.shutdown`. Liveness канала
+//! держится на WS protocol-level Ping/Pong (RFC 6455), application-level
+//! heartbeat не используется.
 //!
 //! Тонкости сериализации:
 //!
@@ -31,11 +32,11 @@ use thiserror::Error;
 ///
 /// `session.*` — отправляются клиентом менеджеру (этап 1).
 /// `tool.*` — отправляются менеджером клиенту (этап 2, ADR‑0023).
-/// `ping` — двусторонний.
+/// `ping` — двусторонний (используется в outbound‑тестах liveness через
+/// JSON‑RPC; для штатного keep-alive канала используется WS‑Ping/Pong).
 #[allow(dead_code)]
 pub mod methods {
     pub const SESSION_REGISTER: &str = "session.register";
-    pub const SESSION_HEARTBEAT: &str = "session.heartbeat";
     pub const SESSION_BYE: &str = "session.bye";
     pub const SESSION_SHUTDOWN: &str = "session.shutdown";
     pub const SESSION_TOOLS_CHANGED: &str = "session.tools_changed";
@@ -261,11 +262,6 @@ pub struct SessionRegisterResult {
     pub reconnected: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct HeartbeatPayload {
-    pub ts: i64,
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionByeParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -354,15 +350,15 @@ mod tests {
 
     #[test]
     fn parse_request_round_trip() {
-        let text = r#"{"jsonrpc":"2.0","id":"1","method":"session.heartbeat","params":{"ts":42}}"#;
+        let text = r#"{"jsonrpc":"2.0","id":"1","method":"session.bye","params":{"reason":"shutdown"}}"#;
         let parsed = WireMessage::parse(text).expect("parse");
         match &parsed {
             WireMessage::Request { id, method, params } => {
                 assert_eq!(*id, Id::String("1".to_owned()));
-                assert_eq!(method, methods::SESSION_HEARTBEAT);
-                let payload: HeartbeatPayload =
-                    serde_json::from_value(params.clone()).expect("heartbeat params");
-                assert_eq!(payload.ts, 42);
+                assert_eq!(method, methods::SESSION_BYE);
+                let payload: SessionByeParams =
+                    serde_json::from_value(params.clone()).expect("bye params");
+                assert_eq!(payload.reason.as_deref(), Some("shutdown"));
             }
             _ => panic!("expected request, got {parsed:?}"),
         }

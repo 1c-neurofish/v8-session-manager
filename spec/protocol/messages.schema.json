@@ -116,24 +116,6 @@
       "additionalProperties": false
     },
 
-    "session.heartbeat.params": {
-      "type": "object",
-      "required": ["ts"],
-      "properties": {
-        "ts": { "type": "integer", "description": "Unix-time millis on the sender." }
-      },
-      "additionalProperties": false
-    },
-
-    "session.heartbeat.result": {
-      "type": "object",
-      "required": ["ts"],
-      "properties": {
-        "ts": { "type": "integer" }
-      },
-      "additionalProperties": false
-    },
-
     "session.bye.params": {
       "type": "object",
       "properties": {

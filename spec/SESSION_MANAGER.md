@@ -77,7 +77,7 @@
 
 ### 4.1 Решение
 
-WS используется как **двунаправленный JSON‑RPC канал**: и регистрация/heartbeat (control‑plane), и MCP‑вызовы (data‑plane) идут по одному соединению. У addin **не задействуется HTTP MCP‑сервер**; `mcp`‑класс addin'а используется только для регистрации tools со стороны 1С‑кода и dispatch‑пайплайна — но точкой входа для удалённых MCP‑запросов становится WS‑сообщение, а не HTTP.
+WS используется как **двунаправленный JSON‑RPC канал**: и регистрация (control‑plane), и MCP‑вызовы (data‑plane) идут по одному соединению. Liveness канала — WS protocol-level Ping/Pong (RFC 6455), без application-level heartbeat. У addin **не задействуется HTTP MCP‑сервер**; `mcp`‑класс addin'а используется только для регистрации tools со стороны 1С‑кода и dispatch‑пайплайна — но точкой входа для удалённых MCP‑запросов становится WS‑сообщение, а не HTTP.
 
 Аргументы:
 
@@ -105,8 +105,14 @@ ID — opaque строки, генерируются стороной‑иниц
 |---|---|---|---|
 | `session.register` | Сразу после WS handshake | `{ client_uid, kind, version, host_id, pid, capabilities?, tools, resources?, prompts?, extras? }` | `{ session_id, server_version, heartbeat_interval_ms, idle_timeout_secs }` |
 | `session.tools_changed` | Если 1С‑код перерегистрировал tools | `{ tools: [...] }` | `{}` |
-| `session.heartbeat` | Каждые `heartbeat_interval_ms` (alt. WS ping) | `{ ts }` | `{ ts }` |
 | `session.bye` | Грейс‑шатдаун клиента | `{ reason }` | `{}` |
+
+> Application-level heartbeat (`session.heartbeat`) убран. Liveness канала
+> держится на WS protocol-level Ping/Pong (RFC 6455) из менеджера; tokio-
+> tungstenite на стороне addin отвечает Pong автоматически — BSL не
+> задействуется. Параметры — `ws_ping_interval_ms` / `ws_ping_timeout_ms`
+> (см. §8.3). Поле `heartbeat_interval_ms` в `session.register.result`
+> оставлено для совместимости wire-контракта, но клиенты его не используют.
 
 `tools` — массив с MCP tool‑descriptor: `{ name, description?, input_schema (JSON Schema) }`.
 
@@ -124,14 +130,14 @@ PID‑верификация менеджером (через `/proc/<pid>/cmdli
 |---|---|---|---|
 | `tool.call` | Прокси вызова от AI‑агента | `{ tool_name, arguments, deadline_ms }` | `{ content: [...] }` (MCP tool result) или JSON‑RPC error |
 | `session.shutdown` | Менеджер инициирует kill | `{ reason, grace_ms }` | `{}` |
-| `ping` | Менеджерский heartbeat (опционально, кроме ws ping/pong) | `{}` | `{ ts }` |
+| `ping` | Опциональный двусторонний liveness-probe (помимо WS Ping/Pong, см. §10) | `{}` | `{ ts }` |
 
 ### 4.5 Жизненный цикл соединения
 
 1. WS handshake. Опционально — `Authorization: Bearer …` (см. §11).
 2. Клиент вызывает `session.register`. До получения `result` менеджер не считает сессию активной.
 3. Менеджер записывает сессию в реестр, эмитит MCP `notifications/tools/list_changed` AI‑агенту.
-4. Двунаправленный обмен: heartbeat в обе стороны, `tool.call` от менеджера, `session.tools_changed` от клиента.
+4. Двунаправленный обмен: `tool.call` от менеджера, `session.tools_changed` от клиента. Liveness — WS Ping/Pong (см. §10).
 5. Завершение:
    - клиент шлёт `session.bye` → менеджер удаляет сессию, эмитит `tools/list_changed`;
    - менеджер шлёт `session.shutdown` → клиент завершается, посылает `session.bye`, закрывает WS;
