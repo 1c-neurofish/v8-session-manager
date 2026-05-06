@@ -65,6 +65,16 @@ flowchart TB
 3. WS frame уходит в addin → devkit BSL → нужный handler в L2-расширении.
 4. Результат поднимается обратно: BSL → addin → WS → менеджер → MCP HTTP → агент.
 
+### Liveness-check (application-level ping)
+
+После регистрации менеджер запускает фоновую задачу `spawn_app_ping_task` (`src/session_manager/ping.rs`), которая раз в `app_ping_interval_ms` (default 20000) шлёт клиенту JSON-RPC `ping` через `ConnectionHandle::call`. Клиент отвечает пустым `result` из BSL-обработчика.
+
+- Если ответа нет за `app_ping_timeout_ms` (default 5000) или коннект уже мёртвый (`WriterClosed`) — менеджер вызывает `mark_disconnected_if_generation`, дренит `ConnectionHandle`, и через `reconnection_grace_secs` запись удаляется (`run_grace_sweeper`).
+- Generation-aware: при soft-reconnect старая ping-task завершается естественно — её `ConnectionHandle` уже drained, следующий `call` вернёт `Disconnected`.
+- WS protocol-level Ping/Pong (RFC 6455) намеренно не инициируется ни менеджером, ни addin'ом: tokio_tungstenite автоматически отвечает Pong на входящие, но это не доказывает живость BSL event-loop. Application-level ping — единственный надёжный сигнал «1С отвечает», потому что обработчик `method = "ping"` исполняется в самом event-loop'е.
+
+`app_ping_interval_ms = 0` отключает ping-инициатор (для тестов или сценариев с собственным liveness-механизмом).
+
 ### Soft-reconnect
 
 1. WS-сокет рвётся (краш сети, перезапуск addin'а).
