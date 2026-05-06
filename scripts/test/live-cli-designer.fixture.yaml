@@ -1,0 +1,42 @@
+# Default live smoke config for scripts/test/live-cli-fixture.sh.
+# The script resolves __ROOT_DIR__ and __OUTPUT_ROOT__ into an isolated workspace.
+
+basePath: __OUTPUT_ROOT__/workspace/basePath
+workPath: __OUTPUT_ROOT__/work
+format: DESIGNER
+builder: DESIGNER
+connection: "File=__OUTPUT_ROOT__/infobase"
+
+tests:
+  execution_timeout_seconds: 300
+  va:
+    epf_path: __VANESSA_EPF__
+    params_path: __VANESSA_PARAMS_TEMPLATE__
+    profile: smoke
+    fail_fast: true
+    timeouts:
+      total_ms: 300000
+    profiles:
+      smoke:
+        feature_path: __VANESSA_FEATURE_PATH__
+
+source-set:
+  - name: configuration
+    type: CONFIGURATION
+    path: configuration
+
+  - name: Расширение1
+    type: EXTENSION
+    path: extension
+
+  - name: external-processor
+    type: EXTERNAL_DATA_PROCESSORS
+    path: external/processor
+
+  - name: external-report
+    type: EXTERNAL_REPORTS
+    path: external/report
+
+tools:
+  platform:
+    version: 8.3.20

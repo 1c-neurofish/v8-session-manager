@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "rust-expert-best-practices-code-review": {
+      "source": "wispbit-ai/skills",
+      "sourceType": "github",
+      "computedHash": "52ff442592ca9c1488b5d03d8fcb22cc7281596264d15ba0817b89918150c2bb"
+    }
+  }
+}

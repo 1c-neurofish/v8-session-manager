@@ -1,0 +1,42 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/rust
+{
+	"name": "v8-runner",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/rust:2-1-bullseye",
+
+	// Mount local Codex settings into the container user's home directory.
+	"mounts": [
+		{
+			"source": "/home/alko/.codex",
+			"target": "/home/vscode/.codex",
+			"type": "bind"
+		}
+	],
+
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	"features": {
+		"ghcr.io/devcontainers/features/node:1": {
+			"version": "22"
+		}
+	},
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// Use a login shell so the Node feature PATH is available, install native deps for openssl-sys,
+	// and provision the CLI tools used in this workspace.
+	"postCreateCommand": "bash -lc 'sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config libssl-dev && cargo install --locked cargo-depsize --force && npm install -g --no-fund --no-audit @anthropic-ai/claude-code @openai/codex'",
+
+	// Configure tool-specific properties.
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"openai.chatgpt"
+			]
+		}
+	},
+
+	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "root"
+}

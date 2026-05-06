@@ -1,0 +1,197 @@
+[env]
+BINARY_NAME = "v8-runner"
+OUT_DIR = "out"
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.install-targets.linux]
+command = "rustup"
+args = [
+  "target",
+  "add",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "x86_64-pc-windows-gnu",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+]
+
+[tasks.install-targets.windows]
+command = "rustup"
+args = [
+  "target",
+  "add",
+  "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+]
+
+[tasks.install-targets.mac]
+command = "rustup"
+args = [
+  "target",
+  "add",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "x86_64-pc-windows-gnu",
+]
+
+[tasks.remove-out.linux]
+command = "rm"
+args = ["-rf", "${OUT_DIR}"]
+
+[tasks.remove-out.mac]
+command = "rm"
+args = ["-rf", "${OUT_DIR}"]
+
+[tasks.remove-out.windows]
+script_runner = "powershell"
+script_extension = "ps1"
+script = '''
+Remove-Item -LiteralPath $env:OUT_DIR -Force -Recurse -ErrorAction SilentlyContinue
+'''
+
+[tasks.build-release-linux-64]
+command = "cargo"
+args = ["build", "--release", "--locked", "--bin", "${BINARY_NAME}", "--target", "x86_64-unknown-linux-gnu"]
+
+[tasks.build-release-linux-musl]
+command = "cargo"
+args = ["build", "--release", "--locked", "--bin", "${BINARY_NAME}", "--target", "x86_64-unknown-linux-musl"]
+
+[tasks.build-release-windows-64.linux]
+command = "cargo"
+args = ["build", "--release", "--locked", "--bin", "${BINARY_NAME}", "--target", "x86_64-pc-windows-gnu"]
+
+[tasks.build-release-windows-64.mac]
+command = "cargo"
+args = ["build", "--release", "--locked", "--bin", "${BINARY_NAME}", "--target", "x86_64-pc-windows-gnu"]
+
+[tasks.build-release-windows-64.windows]
+command = "cargo"
+args = ["build", "--release", "--locked", "--bin", "${BINARY_NAME}", "--target", "x86_64-pc-windows-msvc"]
+
+[tasks.build-release-macos-x64]
+command = "cargo"
+args = ["build", "--release", "--locked", "--bin", "${BINARY_NAME}", "--target", "x86_64-apple-darwin"]
+
+[tasks.build-release-macos-arm64]
+command = "cargo"
+args = ["build", "--release", "--locked", "--bin", "${BINARY_NAME}", "--target", "aarch64-apple-darwin"]
+
+[tasks.release-linux]
+dependencies = ["build-release-linux-64"]
+
+[tasks.release-windows]
+dependencies = ["build-release-windows-64"]
+
+[tasks.release-macos]
+run_task = { name = [
+    "build-release-macos-x64",
+    "build-release-macos-arm64",
+], parallel = true }
+
+[tasks.release.linux]
+run_task = { name = [
+    "release-linux",
+    "release-windows",
+], parallel = true }
+
+[tasks.release.mac]
+dependencies = ["release-macos"]
+
+[tasks.release.windows]
+dependencies = ["release-windows"]
+
+[tasks.release-all]
+run_task = { name = [
+    "release-linux",
+    "release-windows",
+    "release-macos",
+], parallel = true }
+
+[tasks.pack-to-out.linux]
+script = '''
+set -eu
+
+mkdir -p "$OUT_DIR"
+VERSION="$(cargo pkgid | sed -E 's/^.*@([^ ]+)$/\1/')"
+
+copy_artifact() {
+  local source_path="$1"
+  local target_name="$2"
+
+  if [ -f "$source_path" ]; then
+    cp "$source_path" "$OUT_DIR/$target_name"
+  else
+    echo "Skipping missing artifact: $source_path" >&2
+  fi
+}
+
+copy_artifact "target/x86_64-unknown-linux-gnu/release/$BINARY_NAME" "$BINARY_NAME-linux-x86_64-$VERSION"
+copy_artifact "target/x86_64-unknown-linux-musl/release/$BINARY_NAME" "$BINARY_NAME-linux-x86_64-musl-$VERSION"
+copy_artifact "target/x86_64-pc-windows-gnu/release/$BINARY_NAME.exe" "$BINARY_NAME-windows-x86_64-$VERSION.exe"
+copy_artifact "target/x86_64-apple-darwin/release/$BINARY_NAME" "$BINARY_NAME-macos-x86_64-$VERSION"
+copy_artifact "target/aarch64-apple-darwin/release/$BINARY_NAME" "$BINARY_NAME-macos-aarch64-$VERSION"
+'''
+
+[tasks.pack-to-out.mac]
+script = '''
+set -eu
+
+mkdir -p "$OUT_DIR"
+VERSION="$(cargo pkgid | sed -E 's/^.*@([^ ]+)$/\1/')"
+
+copy_artifact() {
+  local source_path="$1"
+  local target_name="$2"
+
+  if [ -f "$source_path" ]; then
+    cp "$source_path" "$OUT_DIR/$target_name"
+  else
+    echo "Skipping missing artifact: $source_path" >&2
+  fi
+}
+
+copy_artifact "target/x86_64-unknown-linux-gnu/release/$BINARY_NAME" "$BINARY_NAME-linux-x86_64-$VERSION"
+copy_artifact "target/x86_64-unknown-linux-musl/release/$BINARY_NAME" "$BINARY_NAME-linux-x86_64-musl-$VERSION"
+copy_artifact "target/x86_64-pc-windows-gnu/release/$BINARY_NAME.exe" "$BINARY_NAME-windows-x86_64-$VERSION.exe"
+copy_artifact "target/x86_64-apple-darwin/release/$BINARY_NAME" "$BINARY_NAME-macos-x86_64-$VERSION"
+copy_artifact "target/aarch64-apple-darwin/release/$BINARY_NAME" "$BINARY_NAME-macos-aarch64-$VERSION"
+'''
+
+[tasks.pack-to-out.windows]
+script_runner = "powershell"
+script_extension = "ps1"
+script = '''
+New-Item -ItemType Directory -Path $env:OUT_DIR -Force -ErrorAction SilentlyContinue | Out-Null
+$Version = ((cargo pkgid) -split '@')[-1]
+
+function Copy-Artifact {
+    param(
+        [string]$SourcePath,
+        [string]$TargetName
+    )
+
+    if (Test-Path -LiteralPath $SourcePath) {
+        Copy-Item -LiteralPath $SourcePath -Destination "$env:OUT_DIR/$TargetName" -Force
+    } else {
+        Write-Error "Skipping missing artifact: $SourcePath"
+    }
+}
+
+Copy-Artifact "target/x86_64-unknown-linux-gnu/release/$env:BINARY_NAME" "$env:BINARY_NAME-linux-x86_64-$Version"
+Copy-Artifact "target/x86_64-unknown-linux-musl/release/$env:BINARY_NAME" "$env:BINARY_NAME-linux-x86_64-musl-$Version"
+Copy-Artifact "target/x86_64-pc-windows-msvc/release/$env:BINARY_NAME.exe" "$env:BINARY_NAME-windows-x86_64-$Version.exe"
+Copy-Artifact "target/x86_64-apple-darwin/release/$env:BINARY_NAME" "$env:BINARY_NAME-macos-x86_64-$Version"
+Copy-Artifact "target/aarch64-apple-darwin/release/$env:BINARY_NAME" "$env:BINARY_NAME-macos-aarch64-$Version"
+'''
+
+[tasks.pack]
+dependencies = ["clean", "install-targets", "release", "remove-out", "pack-to-out"]

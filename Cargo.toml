@@ -1,0 +1,35 @@
+[package]
+name = "v8-session-manager"
+version = "0.3.0"
+edition = "2021"
+
+[[bin]]
+name = "v8-session-manager"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+clap = { version = "4", default-features = false, features = ["derive", "env", "help", "std", "usage"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+schemars = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["ansi", "env-filter", "fmt", "std"] }
+sha2 = "0.10"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+metrics = "0.23"
+metrics-exporter-prometheus = { version = "0.15", default-features = false, features = ["http-listener"] }
+rmcp = { version = "1.2.0", default-features = false, features = ["client", "macros", "server", "transport-child-process", "transport-io", "transport-streamable-http-server"] }
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = "0.7"
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect"] }
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+strip = "symbols"

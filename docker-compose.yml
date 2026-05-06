@@ -1,0 +1,31 @@
+services:
+  v8-session-mgr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: v8-session-mgr:latest
+    container_name: v8-session-mgr
+    hostname: v8-session-mgr
+    restart: unless-stopped
+    environment:
+      RUST_LOG: "trace"
+    networks:
+      infra:
+        ipv4_address: 192.168.0.50
+    ports:
+      - "0.0.0.0:4000:4000"
+      - "0.0.0.0:4001:4001"
+    volumes:
+      - v8-session-mgr-data:/var/lib/v8-session-manager
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/4000 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+networks:
+  infra:
+    external: true
+
+volumes:
+  v8-session-mgr-data:
