@@ -1,0 +1,9 @@
+target/
+.git/
+.github/
+docs/
+examples/
+tests/
+*.md
+.vscode/
+.idea/

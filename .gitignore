@@ -1,0 +1,38 @@
+# Rust build artifacts
+/target/
+/out/
+**/*.rs.bk
+
+# Coverage and profiling outputs
+*.profraw
+*.profdata
+/coverage/
+/tarpaulin-report.html
+
+# Local environment overrides
+.env
+.env.*
+!.env.example
+.direnv/
+claude-set-api.sh
+
+# IDE and local tooling
+.claude/
+.codex/
+.idea/
+.mcp.json
+.tmp/
+.vscode/
+
+# OS-specific files
+.DS_Store
+
+kotlin-example/
+*.pyc
+.agents
+1cv8/
+ai-artefacts/
+
+# Work artefacts (orchestrator/sub-agents)
+.context/
+tasks/

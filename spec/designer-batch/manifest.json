@@ -1,0 +1,2073 @@
+[
+  {
+    "title": "CheckCanApplyConfigurationExtensions",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_CheckCanApplyConfigurationExtensions",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "CheckCanApplyConfigurationExtensions"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_CheckCanApplyConfigurationExtensions",
+    "relativePath": "commands/config-and-extensions/CheckCanApplyConfigurationExtensions.md",
+    "syntax": [
+      "/CheckCanApplyConfigurationExtensions [-Extension <Имя расширения>] [-AllZones] [-Z <значения разделителей>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_CheckCanApplyConfigurationExtensions",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "CheckCanApplyConfigurationExtensions"
+        ]
+      },
+      {
+        "pagePath": "zif3_CheckCanApplyConfigurationExtensions1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Проверки конфигурации и расширений",
+          "CheckCanApplyConfigurationExtensions"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "CompareCfg",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_comparecfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "CompareCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_comparecfg",
+    "relativePath": "commands/config-and-extensions/CompareCfg.md",
+    "syntax": [
+      "/CompareCfg -FirstConfigurationType [-FirstName] [-FirstFile] [-FirstVersion]\n-SecondConfigurationType [-SecondName] [-SecondFile] [-SecondVersion] [-MappingRule]\n[-Objects] -ReportType [-IncludeChangedObjects] [-IncludeDeletedObjects] [-IncludeAddedObjects] -ReportFormat -ReportFile"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_comparecfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "CompareCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DeleteCfg",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_deletecfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "DeleteCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_deletecfg",
+    "relativePath": "commands/config-and-extensions/DeleteCfg.md",
+    "syntax": [
+      "/DeleteCfg [-Extension <имя расширения>] [-AllExtensions]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_deletecfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "DeleteCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DumpCfg",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_dumpcfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "DumpCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_dumpcfg",
+    "relativePath": "commands/config-and-extensions/DumpCfg.md",
+    "syntax": [
+      "/DumpCfg <имя cf-файла> [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_dumpcfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "DumpCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DumpConfigFiles",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_dumpconfigfiles",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "DumpConfigFiles"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_dumpconfigfiles",
+    "relativePath": "commands/config-and-extensions/DumpConfigFiles.md",
+    "syntax": [
+      "/DumpConfigFiles <каталог выгрузки> [-Module] [-Template]\n[-Help] [-AllWritable] [-Picture] [-Right][-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_dumpconfigfiles",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "DumpConfigFiles"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DumpConfigToFiles",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_dumpconfigtofiles",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "DumpConfigToFiles"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_dumpconfigtofiles",
+    "relativePath": "commands/config-and-extensions/DumpConfigToFiles.md",
+    "syntax": [
+      "/DumpConfigToFiles <каталог выгрузки> [-Extension <имя расширения>]\n[-AllExtensions] [-format] [-update][-force][-getChanges <имя файла>]\n[-configDumpInfoForChanges <имя файла>][-configDumpInfoOnly]\n[-Server][-Archive <имя файла>]\n\n[-listFile <имя файла>][-ignoreUnresolvedReferences]",
+      "1cv8.exe DESIGNER /S \"localhost/BaseName\" /DumpConfigToFiles c:/xml -Server -JobsCount 5"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_dumpconfigtofiles",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "DumpConfigToFiles"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DumpDBCfg",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_dumpdbcfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "DumpDBCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_dumpdbcfg",
+    "relativePath": "commands/config-and-extensions/DumpDBCfg.md",
+    "syntax": [
+      "/DumpDBCfg <имя cf-файла> [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_dumpdbcfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "DumpDBCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DumpDBCfgList",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_dumpdbcfglist",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "DumpDBCfgList"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_dumpdbcfglist",
+    "relativePath": "commands/config-and-extensions/DumpDBCfgList.md",
+    "syntax": [
+      "/DumpDBCfgList [-Extension <имя расширения>] [-AllExtensions]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_dumpdbcfglist",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "DumpDBCfgList"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "GetConfigGenerationID",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_GetConfigGenerationID",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "GetConfigGenerationID"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_GetConfigGenerationID",
+    "relativePath": "commands/config-and-extensions/GetConfigGenerationID.md",
+    "syntax": [
+      "/GetConfigGenerationID [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_GetConfigGenerationID",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "GetConfigGenerationID"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "LoadCfg",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_loadcfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "LoadCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_loadcfg",
+    "relativePath": "commands/config-and-extensions/LoadCfg.md",
+    "syntax": [
+      "/LoadCfg <имя cf-файла> [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_loadcfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "LoadCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "LoadConfigFiles",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_loadconfigfiles",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "LoadConfigFiles"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_loadconfigfiles",
+    "relativePath": "commands/config-and-extensions/LoadConfigFiles.md",
+    "syntax": [
+      "/LoadConfigFiles <каталог выгрузки> [-Module] [-Template]\n[-Help] [-AllWritable] [-Picture] [-Right][-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_loadconfigfiles",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "LoadConfigFiles"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "LoadConfigFromFiles",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_loadconfigfromfiles",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "LoadConfigFromFiles"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_loadconfigfromfiles",
+    "relativePath": "commands/config-and-extensions/LoadConfigFromFiles.md",
+    "syntax": [
+      "/LoadConfigFromFiles <каталог загрузки> [-Extension <имя расширения>]\n[-AllExtensions][-files \"<файлы>\"][-partial][-listFile <файл списка>][-format <режим>] [-updateConfigDumpInfo]\n[-NoCheck][-Archive <имя ZIP-архива>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_loadconfigfromfiles",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "LoadConfigFromFiles"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "MergeCfg",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_mergecfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "MergeCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_mergecfg",
+    "relativePath": "commands/config-and-extensions/MergeCfg.md",
+    "syntax": [
+      "/MergeCfg <имя cf/cfe-файла> -Settings <имя файла настроек>\n[-EnableSupport | -DisableSupport][-IncludeObjectsByUnresolvedRefs | -ClearUnresolvedRefs]\n[-Extension <имя расширения>][-force]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_mergecfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "MergeCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "RollbackCfg",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_rollbackcfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "RollbackCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_rollbackcfg",
+    "relativePath": "commands/config-and-extensions/RollbackCfg.md",
+    "syntax": [
+      "/RollbackCfg [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_rollbackcfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "RollbackCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "UpdateDBCfg",
+    "kind": "command",
+    "topGroup": "Конфигурация и расширения",
+    "subgroup": "config-and-extensions",
+    "pagePath": "zif3_updatedbcfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Конфигурация и расширения",
+      "UpdateDBCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_updatedbcfg",
+    "relativePath": "commands/config-and-extensions/UpdateDBCfg.md",
+    "syntax": [
+      "/UpdateDBCfg [–Dynamic<Режим>] [-BackgroundStart] [-BackgroundCancel]",
+      "[-BackgroundFinish [-Visible]] [-BackgroundSuspend] [-BackgroundResume]\n[-WarningsAsErrors] [-Server [-v1|-v2]][-Extension <имя расширения>]\r\n[-SessionTerminate <Режим>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_updatedbcfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Конфигурация и расширения",
+          "UpdateDBCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "EraseData",
+    "kind": "command",
+    "topGroup": "Удаление данных",
+    "subgroup": "data-deletion",
+    "pagePath": "zif3_erasedata",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Удаление данных",
+      "EraseData"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_erasedata",
+    "relativePath": "commands/data-deletion/EraseData.md",
+    "syntax": [
+      "/EraseData [/Z[<разделители>]]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_erasedata",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Удаление данных",
+          "EraseData"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ResetMasterNode",
+    "kind": "command",
+    "topGroup": "Распределенная информационная база",
+    "subgroup": "distributed-infobase",
+    "pagePath": "zif3_resetmasternode",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Распределенная информационная база",
+      "ResetMasterNode"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_resetmasternode",
+    "relativePath": "commands/distributed-infobase/ResetMasterNode.md",
+    "syntax": [
+      "/ResetMasterNode"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_resetmasternode",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Распределенная информационная база",
+          "ResetMasterNode"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "CreateDistributionFiles",
+    "kind": "command",
+    "topGroup": "Команды создания файла поставки и обновления",
+    "subgroup": "distribution",
+    "pagePath": "zif3_createdistributionfiles",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды создания файла поставки и обновления",
+      "CreateDistributionFiles"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_createdistributionfiles",
+    "relativePath": "commands/distribution/CreateDistributionFiles.md",
+    "syntax": [
+      "/CreateDistributionFiles [-cffile <имя cf-файла>]\n[-cfufile <имя cfu-файла> [-f <имя cf-файла>|-v <версия дистрибутива>]+]\n[-digisign <имя файла с параметрами лицензирования >][-WarningsAsErrors]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_createdistributionfiles",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды создания файла поставки и обновления",
+          "CreateDistributionFiles"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "CreateDistributive",
+    "kind": "command",
+    "topGroup": "Команды создания файла поставки и обновления",
+    "subgroup": "distribution",
+    "pagePath": "zif3_createdistributive",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды создания файла поставки и обновления",
+      "CreateDistributive"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_createdistributive",
+    "relativePath": "commands/distribution/CreateDistributive.md",
+    "syntax": [
+      "/CreateDistributive <каталог создания комплекта поставки> -File <имя файла описания комплекта поставки>\n[-Option <вариант поставки>] [-MakeSetup] [-MakeFiles] [-digisign <имя файла с параметрами лицензирования >] [-WarningsAsErrors]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_createdistributive",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды создания файла поставки и обновления",
+          "CreateDistributive"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "CreateDistributivePackage",
+    "kind": "command",
+    "topGroup": "Команды создания файла поставки и обновления",
+    "subgroup": "distribution",
+    "pagePath": "zif3_createdistributivepackage",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды создания файла поставки и обновления",
+      "CreateDistributivePackage"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_createdistributivepackage",
+    "relativePath": "commands/distribution/CreateDistributivePackage.md",
+    "syntax": [
+      "/CreateDistributivePackage <имя каталога> -File <имя файла описания комплекта поставки>\n\r\n-PackageFileName <имя архива> [-Option <вариант поставки>] [-MakeSetup] [-MakeFiles]\n\r\n[-digisign <имя файла с параметрами лицензирования>] [-WarningAsError]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_createdistributivepackage",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды создания файла поставки и обновления",
+          "CreateDistributivePackage"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "CreateTemplateListFile",
+    "kind": "command",
+    "topGroup": "Команды создания файла поставки и обновления",
+    "subgroup": "distribution",
+    "pagePath": "zif3_createtemplatelistfile",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды создания файла поставки и обновления",
+      "CreateTemplateListFile"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_createtemplatelistfile",
+    "relativePath": "commands/distribution/CreateTemplateListFile.md",
+    "syntax": [
+      "/CreateTemplateListFile <имя файла> [-TemplatesSourcePath]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_createtemplatelistfile",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды создания файла поставки и обновления",
+          "CreateTemplateListFile"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "SignCfg",
+    "kind": "command",
+    "topGroup": "Команды создания файла поставки и обновления",
+    "subgroup": "distribution",
+    "pagePath": "zif3_SignCfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды создания файла поставки и обновления",
+      "SignCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_SignCfg",
+    "relativePath": "commands/distribution/SignCfg.md",
+    "syntax": [
+      "/SignCfg -SignedFile <путь к cfe-файлу> -ConfigurationType <тип конфигурации> [-Name <имя расширения>]\n[-Version <версия>] [-File <путь к cfe-файлу>] -digisign <имя файла с параметрами лицензирования>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_SignCfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды создания файла поставки и обновления",
+          "SignCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ReduceEventLogSize",
+    "kind": "command",
+    "topGroup": "Журнал регистрации",
+    "subgroup": "event-log",
+    "pagePath": "zif3_reduceeventlogsize",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Журнал регистрации",
+      "ReduceEventLogSize"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_reduceeventlogsize",
+    "relativePath": "commands/event-log/ReduceEventLogSize.md",
+    "syntax": [
+      "/ReduceEventLogSize <Date> [-saveAs <имя файла>] [-KeepSplitting]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_reduceeventlogsize",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Журнал регистрации",
+          "ReduceEventLogSize"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DumpExternalDataProcessorOrReportToFiles",
+    "kind": "command",
+    "topGroup": "Внешние обработки (отчеты)",
+    "subgroup": "external-data-processors",
+    "pagePath": "zif3_DumpExternalDataProcessorOrReportToFiles",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Внешние обработки (отчеты)",
+      "DumpExternalDataProcessorOrReportToFiles"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_DumpExternalDataProcessorOrReportToFiles",
+    "relativePath": "commands/external-data-processors/DumpExternalDataProcessorOrReportToFiles.md",
+    "syntax": [
+      "/DumpExternalDataProcessorOrReportToFiles <путь к корневому файлу выгрузки>\n<путь к файлу внешней обработки или отчета> [-Format Plain|Hierarchical]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_DumpExternalDataProcessorOrReportToFiles",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Внешние обработки (отчеты)",
+          "DumpExternalDataProcessorOrReportToFiles"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "LoadExternalDataProcessorOrReportFromFiles",
+    "kind": "command",
+    "topGroup": "Внешние обработки (отчеты)",
+    "subgroup": "external-data-processors",
+    "pagePath": "zif3_LoadExternalDataProcessorOrReportFromFiles",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Внешние обработки (отчеты)",
+      "LoadExternalDataProcessorOrReportFromFiles"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_LoadExternalDataProcessorOrReportFromFiles",
+    "relativePath": "commands/external-data-processors/LoadExternalDataProcessorOrReportFromFiles.md",
+    "syntax": [
+      "/LoadExternalDataProcessorOrReportFromFiles <путь к корневому файлу выгрузки> <путь к файлу внешней обработки или отчета>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_LoadExternalDataProcessorOrReportFromFiles",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Внешние обработки (отчеты)",
+          "LoadExternalDataProcessorOrReportFromFiles"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "IBRestoreIntegrity",
+    "kind": "command",
+    "topGroup": "Восстановление структуры информационной базы",
+    "subgroup": "infobase-recovery",
+    "pagePath": "zif3_ibrestoreintegrity",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Восстановление структуры информационной базы",
+      "IBRestoreIntegrity"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_ibrestoreintegrity",
+    "relativePath": "commands/infobase-recovery/IBRestoreIntegrity.md",
+    "syntax": [
+      "/IBRestoreIntegrity"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_ibrestoreintegrity",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Восстановление структуры информационной базы",
+          "IBRestoreIntegrity"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DumpIB",
+    "kind": "command",
+    "topGroup": "Выгрузка и загрузка информационной базы",
+    "subgroup": "infobase-transfer",
+    "pagePath": "zif3_dumpib",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Выгрузка и загрузка информационной базы",
+      "DumpIB"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_dumpib",
+    "relativePath": "commands/infobase-transfer/DumpIB.md",
+    "syntax": [
+      "/DumpIB <имя файла>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_dumpib",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Выгрузка и загрузка информационной базы",
+          "DumpIB"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "RestoreIB",
+    "kind": "command",
+    "topGroup": "Выгрузка и загрузка информационной базы",
+    "subgroup": "infobase-transfer",
+    "pagePath": "zif3_restoreib",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Выгрузка и загрузка информационной базы",
+      "RestoreIB"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_restoreib",
+    "relativePath": "commands/infobase-transfer/RestoreIB.md",
+    "syntax": [
+      "/RestoreIB <имя файла> [-JobsCount <Количество>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_restoreib",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Выгрузка и загрузка информационной базы",
+          "RestoreIB"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "MobileAppUpdatePublication",
+    "kind": "command",
+    "topGroup": "Мобильное приложение",
+    "subgroup": "mobile-app",
+    "pagePath": "zif3_maupdatepublication",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Мобильное приложение",
+      "MobileAppUpdatePublication"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_maupdatepublication",
+    "relativePath": "commands/mobile-app/MobileAppUpdatePublication.md",
+    "syntax": [
+      "/MobileAppUpdatePublication"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_maupdatepublication",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Мобильное приложение",
+          "MobileAppUpdatePublication"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "MobileAppWriteFile",
+    "kind": "command",
+    "topGroup": "Мобильное приложение",
+    "subgroup": "mobile-app",
+    "pagePath": "zif3_mawritefile",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Мобильное приложение",
+      "MobileAppWriteFile"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_mawritefile",
+    "relativePath": "commands/mobile-app/MobileAppWriteFile.md",
+    "syntax": [
+      "/MobileAppWriteFile <имя файла>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_mawritefile",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Мобильное приложение",
+          "MobileAppWriteFile"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "MobileClientDigiSign",
+    "kind": "command",
+    "topGroup": "Мобильный клиент",
+    "subgroup": "mobile-client",
+    "pagePath": "zif3_MobileClientDigiSign",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Мобильный клиент",
+      "MobileClientDigiSign"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_MobileClientDigiSign",
+    "relativePath": "commands/mobile-client/MobileClientDigiSign.md",
+    "syntax": [
+      "/MobileClientDigiSign <имя файла ключа>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_MobileClientDigiSign",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Мобильный клиент",
+          "MobileClientDigiSign"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "MobileClientWriteFile",
+    "kind": "command",
+    "topGroup": "Мобильный клиент",
+    "subgroup": "mobile-client",
+    "pagePath": "zif3_MobileClientWriteFile",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Мобильный клиент",
+      "MobileClientWriteFile"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_MobileClientWriteFile",
+    "relativePath": "commands/mobile-client/MobileClientWriteFile.md",
+    "syntax": [
+      "/MobileClientWriteFile <имя файла>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_MobileClientWriteFile",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Мобильный клиент",
+          "MobileClientWriteFile"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "SetPredefinedDataUpdate",
+    "kind": "command",
+    "topGroup": "Предопределенные данные",
+    "subgroup": "predefined-data",
+    "pagePath": "zif3_setpredefineddataupdate",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Предопределенные данные",
+      "SetPredefinedDataUpdate"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_setpredefineddataupdate",
+    "relativePath": "commands/predefined-data/SetPredefinedDataUpdate.md",
+    "syntax": [
+      "/SetPredefinedDataUpdate [-Auto] [-UpdateAutomatically] [-DoNotUpdateAutomatically]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_setpredefineddataupdate",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Предопределенные данные",
+          "SetPredefinedDataUpdate"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryAddUser",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryadduser",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Работа с пользователями",
+      "ConfigurationRepositoryAddUser"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryadduser",
+    "relativePath": "commands/repository/ConfigurationRepositoryAddUser.md",
+    "syntax": [
+      "/ConfigurationRepositoryAddUser [-Extension <имя расширения>] -User <Имя> -Pwd <Пароль> -Rights <Права> [-RestoreDeletedUser]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryadduser",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Работа с пользователями",
+          "ConfigurationRepositoryAddUser"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryBindCfg",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositorybindcfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции со всей конфигурацией",
+      "ConfigurationRepositoryBindCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositorybindcfg",
+    "relativePath": "commands/repository/ConfigurationRepositoryBindCfg.md",
+    "syntax": [
+      "/ConfigurationRepositoryBindCfg [-Extension <имя расширения>] [-forceBindAlreadyBindedUser][-forceReplaceCfg]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositorybindcfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции со всей конфигурацией",
+          "ConfigurationRepositoryBindCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryClearCache",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryclearcache",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции с кешем хранилища",
+      "ConfigurationRepositoryClearCache"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryclearcache",
+    "relativePath": "commands/repository/ConfigurationRepositoryClearCache.md",
+    "syntax": [
+      "/ConfigurationRepositoryClearCache [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryclearcache",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции с кешем хранилища",
+          "ConfigurationRepositoryClearCache"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryClearGlobalCache",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryclearglobalcache",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции с кешем хранилища",
+      "ConfigurationRepositoryClearGlobalCache"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryclearglobalcache",
+    "relativePath": "commands/repository/ConfigurationRepositoryClearGlobalCache.md",
+    "syntax": [
+      "/ConfigurationRepositoryClearGlobalCache [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryclearglobalcache",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции с кешем хранилища",
+          "ConfigurationRepositoryClearGlobalCache"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryClearLocalCache",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryclearlocalcache",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции с кешем хранилища",
+      "ConfigurationRepositoryClearLocalCache"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryclearlocalcache",
+    "relativePath": "commands/repository/ConfigurationRepositoryClearLocalCache.md",
+    "syntax": [
+      "/ConfigurationRepositoryClearLocalCache [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryclearlocalcache",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции с кешем хранилища",
+          "ConfigurationRepositoryClearLocalCache"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryCommit",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositorycommit",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции с объектами",
+      "ConfigurationRepositoryCommit"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositorycommit",
+    "relativePath": "commands/repository/ConfigurationRepositoryCommit.md",
+    "syntax": [
+      "/ConfigurationRepositoryCommit [-objects <имя файла со списком объектов>]\n[-comment \"<Текст комментария>\"] [-keepLocked] [-force] [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositorycommit",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции с объектами",
+          "ConfigurationRepositoryCommit"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryCopyUsers",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositorycopyusers",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Работа с пользователями",
+      "ConfigurationRepositoryCopyUsers"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositorycopyusers",
+    "relativePath": "commands/repository/ConfigurationRepositoryCopyUsers.md",
+    "syntax": [
+      "/ConfigurationRepositoryCopyUsers  -Path <путь> -User <Имя>\n-Pwd <Пароль> [-RestoreDeletedUser][-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositorycopyusers",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Работа с пользователями",
+          "ConfigurationRepositoryCopyUsers"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryCreate",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositorycreate",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Создание хранилища",
+      "ConfigurationRepositoryCreate"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositorycreate",
+    "relativePath": "commands/repository/ConfigurationRepositoryCreate.md",
+    "syntax": [
+      "/ConfigurationRepositoryCreate [-MinPasswordLength <Число>][-CheckPasswordComplexity]\r\n [-Extension <имя расширения>] [-AllowConfigurationChanges \r\n-ChangesAllowedRule <Правило поддержки> -ChangesNotRecommendedRule <Правило поддержки>] [-NoBind]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositorycreate",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Создание хранилища",
+          "ConfigurationRepositoryCreate"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryDumpCfg",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositorydumpcfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции со всей конфигурацией",
+      "ConfigurationRepositoryDumpCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositorydumpcfg",
+    "relativePath": "commands/repository/ConfigurationRepositoryDumpCfg.md",
+    "syntax": [
+      "/ConfigurationRepositoryDumpCfg [-Extension <имя расширения>] <имя cf файла> [-v <номер версии хранилища>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositorydumpcfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции со всей конфигурацией",
+          "ConfigurationRepositoryDumpCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryLock",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositorylock",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции с объектами",
+      "ConfigurationRepositoryLock"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositorylock",
+    "relativePath": "commands/repository/ConfigurationRepositoryLock.md",
+    "syntax": [
+      "/ConfigurationRepositoryLock [-Extension <имя расширения>] [-objects <имя файла со списком объектов>][-revised]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositorylock",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции с объектами",
+          "ConfigurationRepositoryLock"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryOptimizeData",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryoptimizedata",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Сервисные операции",
+      "ConfigurationRepositoryOptimizeData"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryoptimizedata",
+    "relativePath": "commands/repository/ConfigurationRepositoryOptimizeData.md",
+    "syntax": [
+      "/ConfigurationRepositoryOptimizeData [-Extension <имя расширения>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryoptimizedata",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Сервисные операции",
+          "ConfigurationRepositoryOptimizeData"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryReport",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryreport",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Сервисные операции",
+      "ConfigurationRepositoryReport"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryreport",
+    "relativePath": "commands/repository/ConfigurationRepositoryReport.md",
+    "syntax": [
+      "/ConfigurationRepositoryReport <имя файла> [-Extension <имя расширения>]\n[-NBegin <номер версии>] [-NEnd <номер версии>] [-DateBegin] [-DateEnd] [-GroupByObject]\n[-GroupByComment] [-DoNotIncludeVersionsWithLabels] [-IncludeOnlyVersionsWithLabels]\n[-IncludeCommentLinesWithDoubleSlash] [-ConfigurationVersion <версия конфигурации>]\n[-ReportFormat < txt | mxl>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryreport",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Сервисные операции",
+          "ConfigurationRepositoryReport"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositorySetLabel",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositorysetlabel",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Сервисные операции",
+      "ConfigurationRepositorySetLabel"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositorysetlabel",
+    "relativePath": "commands/repository/ConfigurationRepositorySetLabel.md",
+    "syntax": [
+      "/ConfigurationRepositorySetLabel [-Extension <имя расширения>]\n[-v <номер версии хранилища>] [-name\"<название метки>\"] [-comment\"<текст комментария>\"]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositorysetlabel",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Сервисные операции",
+          "ConfigurationRepositorySetLabel"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryUnbindCfg",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryunbindcfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции со всей конфигурацией",
+      "ConfigurationRepositoryUnbindCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryunbindcfg",
+    "relativePath": "commands/repository/ConfigurationRepositoryUnbindCfg.md",
+    "syntax": [
+      "/ConfigurationRepositoryUnbindCfg [-Extension <имя расширения>] [-force]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryunbindcfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции со всей конфигурацией",
+          "ConfigurationRepositoryUnbindCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryUnlock",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryunlock",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции с объектами",
+      "ConfigurationRepositoryUnlock"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryunlock",
+    "relativePath": "commands/repository/ConfigurationRepositoryUnlock.md",
+    "syntax": [
+      "/ConfigurationRepositoryUnlock [-Extension <имя расширения>]\n[-objects <имя файла со списком объектов>] [-force]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryunlock",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции с объектами",
+          "ConfigurationRepositoryUnlock"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryUpdateCfg",
+    "kind": "command",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository",
+    "pagePath": "zif3_configurationrepositoryupdatecfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Операции со всей конфигурацией",
+      "ConfigurationRepositoryUpdateCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryupdatecfg",
+    "relativePath": "commands/repository/ConfigurationRepositoryUpdateCfg.md",
+    "syntax": [
+      "/ConfigurationRepositoryUpdateCfg [-Extension <имя расширения>]\n[-v <номер версии хранилища>] [-revised] [-force]\n[-objects <имя файла со списком объектов>]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryupdatecfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Операции со всей конфигурацией",
+          "ConfigurationRepositoryUpdateCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ManageCfgSupport",
+    "kind": "command",
+    "topGroup": "Поддержка конфигурации",
+    "subgroup": "support",
+    "pagePath": "zif3_managecfgsupport",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Поддержка конфигурации",
+      "ManageCfgSupport"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_managecfgsupport",
+    "relativePath": "commands/support/ManageCfgSupport.md",
+    "syntax": [
+      "/ManageCfgSupport [-disableSupport] [-force]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_managecfgsupport",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Поддержка конфигурации",
+          "ManageCfgSupport"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "UpdateCfg",
+    "kind": "command",
+    "topGroup": "Поддержка конфигурации",
+    "subgroup": "support",
+    "pagePath": "zif3_updatecfg",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Поддержка конфигурации",
+      "UpdateCfg"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_updatecfg",
+    "relativePath": "commands/support/UpdateCfg.md",
+    "syntax": [
+      "/UpdateCfg <имя cf | cfu-файла>  -Settings <имя файла настроек>\n[-IncludeObjectsByUnresolvedRefs | -ClearUnresolvedRefs][-force][-DumpListOfTwiceChangedProperties]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_updatecfg",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Поддержка конфигурации",
+          "UpdateCfg"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "CheckConfig",
+    "kind": "command",
+    "topGroup": "Проверки конфигурации и расширений",
+    "subgroup": "validation",
+    "pagePath": "zif3_checkconfig",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Проверки конфигурации и расширений",
+      "CheckConfig"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_checkconfig",
+    "relativePath": "commands/validation/CheckConfig.md",
+    "syntax": [
+      "/CheckConfig [-ConfigLogIntegrity] [-IncorrectReferences] [-ThinClient]\n[-WebClient] [-MobileClient] [-Server] [-ExternalConnection] [-ExternalConnectionServer] \r\n[-MobileAppClient][-MobileAppServer] [-ThickClientManagedApplication] \r\n[-ThickClientServerManagedApplication] [-ThickClientOrdinaryApplication]\r\n[-ThickClientServerOrdinaryApplication]  [-MobileClientDigiSign] [-DistributiveModules] \r\n[-UnreferenceProcedures] [-HandlersExistence] [-EmptyHandlers] \r\n[-ExtendedModulesCheck] [-CheckUseSynchronousCalls] [-CheckUseModality] [-UnsupportedFunctional] \r\n[-Extension <имя расширения>] [-AllExtensions]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_checkconfig",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Проверки конфигурации и расширений",
+          "CheckConfig"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "CheckModules",
+    "kind": "command",
+    "topGroup": "Проверки конфигурации и расширений",
+    "subgroup": "validation",
+    "pagePath": "zif3_checkmodules",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Проверки конфигурации и расширений",
+      "CheckModules"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_checkmodules",
+    "relativePath": "commands/validation/CheckModules.md",
+    "syntax": [
+      "/CheckModules [-ThinClient] [-WebClient] [-Server] [-ExternalConnection]\n[-ThickClientOrdinaryApplication] [-MobileAppClient] [-MobileAppServer]\n[-MobileClient][-ExtendedModulesCheck][-Extension <имя расширения>]\n[-AllExtensions]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_checkmodules",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Проверки конфигурации и расширений",
+          "CheckModules"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "IBCheckAndRepair",
+    "kind": "command",
+    "topGroup": "Проверки конфигурации и расширений",
+    "subgroup": "validation",
+    "pagePath": "zif3_ibcheckandrepair",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Проверки конфигурации и расширений",
+      "IBCheckAndRepair"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_ibcheckandrepair",
+    "relativePath": "commands/validation/IBCheckAndRepair.md",
+    "syntax": [
+      "/IBCheckAndRepair [-ReIndex][-LogIntegrity [<тип объекта>[,<тип объекта>] |\r\n -LogAndRefsIntegrity [<тип объекта>[,<тип объекта>] ]\r\n [-RecalcTotals] [-IBCompression][-Rebuild][–RebuildStandaloneCfg]\r\n[-TestOnly | [[-BadRefCreate | BadRefClear |-BadRefNone] \r\n[-BadDataCreate | -BadDataDelete]]] [-UseStartPoint][-TimeLimit:hhh:mm]\r\n[-ConfigurationExtensionsLogIntegrity][-RebuildConfigurationExtensions]\r\n[-RefreshTableLocation]\r\n[-BinaryDataStorageIntegrity [<тип объекта>[,<тип объекта>]]]\r\n[-JobsCount <количество>] [-Z: ”<значения разделителей>”]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_ibcheckandrepair",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Проверки конфигурации и расширений",
+          "IBCheckAndRepair"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "AgentBaseDir",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentBaseDir",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentBaseDir"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentBaseDir",
+    "relativePath": "parameters/agent-mode/AgentBaseDir.md",
+    "syntax": [
+      "/AgentBaseDir <рабочий каталог>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_AgentBaseDir",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы в режиме агента",
+          "AgentBaseDir"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "AgentListenAddress",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentListenAddress",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentListenAddress"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentListenAddress",
+    "relativePath": "parameters/agent-mode/AgentListenAddress.md",
+    "syntax": [
+      "/AgentListenAddress <Адрес>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_AgentListenAddress",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы в режиме агента",
+          "AgentListenAddress"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "AgentMode",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentMode",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentMode"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentMode",
+    "relativePath": "parameters/agent-mode/AgentMode.md",
+    "syntax": [
+      "/AgentMode"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_AgentMode",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы в режиме агента",
+          "AgentMode"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "AgentPort",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentPort",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentPort"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentPort",
+    "relativePath": "parameters/agent-mode/AgentPort.md",
+    "syntax": [
+      "/AgentPort <Порт>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_AgentPort",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы в режиме агента",
+          "AgentPort"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "AgentSSHHostKey",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentSSHHostKey",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentSSHHostKey"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentSSHHostKey",
+    "relativePath": "parameters/agent-mode/AgentSSHHostKey.md",
+    "syntax": [
+      "/AgentSSHHostKey <приватный ключ>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_AgentSSHHostKey",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы в режиме агента",
+          "AgentSSHHostKey"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "AgentSSHHostKeyAuto",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentSSHHostKeyAuto",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentSSHHostKeyAuto"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentSSHHostKeyAuto",
+    "relativePath": "parameters/agent-mode/AgentSSHHostKeyAuto.md",
+    "syntax": [
+      "/AgentSSHHostKeyAuto"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_AgentSSHHostKeyAuto",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы в режиме агента",
+          "AgentSSHHostKeyAuto"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "/Visible",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif3_visible",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "Visible"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_visible",
+    "relativePath": "parameters/misc/Visible.md",
+    "syntax": [],
+    "aliases": [
+      {
+        "pagePath": "zif3_visible",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "Visible"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "@",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif2_infile1",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "@"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif2_infile1",
+    "relativePath": "parameters/misc/at.md",
+    "syntax": [
+      "/@ <имя файла>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif2_infile1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "@"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConvertFiles",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif3_convertfiles",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "ConvertFiles"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_convertfiles",
+    "relativePath": "parameters/misc/ConvertFiles.md",
+    "syntax": [
+      "/ConvertFiles <имя файла|путь>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_convertfiles",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "ConvertFiles"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DisableHomePageForms",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif2_DisableHomePageForms1",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "DisableHomePageForms"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif2_DisableHomePageForms1",
+    "relativePath": "parameters/misc/DisableHomePageForms.md",
+    "syntax": [
+      "/DisableHomePageForms"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif2_DisableHomePageForms1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "DisableHomePageForms"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DisableStartupDialogs",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif2_DisableStartupDialogs1",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "DisableStartupDialogs"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif2_DisableStartupDialogs1",
+    "relativePath": "parameters/misc/DisableStartupDialogs.md",
+    "syntax": [
+      "/DisableStartupDialogs"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif2_DisableStartupDialogs1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "DisableStartupDialogs"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DisableStartupMessages",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif2_DisableStartupMessages1",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "DisableStartupMessages"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif2_DisableStartupMessages1",
+    "relativePath": "parameters/misc/DisableStartupMessages.md",
+    "syntax": [
+      "/DisableStartupMessages"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif2_DisableStartupMessages1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "DisableStartupMessages"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DisableUnrecoverableErrorMessage",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "DisableUnrecoverableErrorMessage1",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "DisableUnrecoverableErrorMessage"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=DisableUnrecoverableErrorMessage1",
+    "relativePath": "parameters/misc/DisableUnrecoverableErrorMessage.md",
+    "syntax": [
+      "/DisableUnrecoverableErrorMessage"
+    ],
+    "aliases": [
+      {
+        "pagePath": "DisableUnrecoverableErrorMessage1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "DisableUnrecoverableErrorMessage"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DisplayUserNotificationList",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif2_DisplayUserNotificationList1",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "DisplayUserNotificationList"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif2_DisplayUserNotificationList1",
+    "relativePath": "parameters/misc/DisplayUserNotificationList.md",
+    "syntax": [
+      "/DisplayUserNotificationList"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif2_DisplayUserNotificationList1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "DisplayUserNotificationList"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "DumpResult",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif3_dumpresult",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "DumpResult"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_dumpresult",
+    "relativePath": "parameters/misc/DumpResult.md",
+    "syntax": [
+      "/DumpResult <имя файла>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_dumpresult",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "DumpResult"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Out",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif2_out1",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "Out"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif2_out1",
+    "relativePath": "parameters/misc/Out.md",
+    "syntax": [
+      "/Out <имя файла> [-NoTruncate]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif2_out1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "Out"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "RunEnterprise",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif3_runenterprise",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "RunEnterprise"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_runenterprise",
+    "relativePath": "parameters/misc/RunEnterprise.md",
+    "syntax": [
+      "/RunEnterprise"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_runenterprise",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "RunEnterprise"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "UseHwLicenses",
+    "kind": "parameter",
+    "topGroup": "Прочие параметры",
+    "subgroup": "misc",
+    "pagePath": "zif2_UseHwLicenses1",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Прочие параметры",
+      "UseHwLicenses"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif2_UseHwLicenses1",
+    "relativePath": "parameters/misc/UseHwLicenses.md",
+    "syntax": [
+      "/UseHwLicenses[+/-]"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif2_UseHwLicenses1",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Прочие параметры",
+          "UseHwLicenses"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryF",
+    "kind": "parameter",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository-access",
+    "pagePath": "zif3_configurationrepositoryf",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Параметры доступа к хранилищу",
+      "ConfigurationRepositoryF"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryf",
+    "relativePath": "parameters/repository-access/ConfigurationRepositoryF.md",
+    "syntax": [
+      "/ConfigurationRepositoryF <каталог хранилища>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryf",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Параметры доступа к хранилищу",
+          "ConfigurationRepositoryF"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryN",
+    "kind": "parameter",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository-access",
+    "pagePath": "zif3_configurationrepositoryn",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Параметры доступа к хранилищу",
+      "ConfigurationRepositoryN"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryn",
+    "relativePath": "parameters/repository-access/ConfigurationRepositoryN.md",
+    "syntax": [
+      "/ConfigurationRepositoryN <имя>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryn",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Параметры доступа к хранилищу",
+          "ConfigurationRepositoryN"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "ConfigurationRepositoryP",
+    "kind": "parameter",
+    "topGroup": "Команды работы с хранилищем конфигурации",
+    "subgroup": "repository-access",
+    "pagePath": "zif3_configurationrepositoryp",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы с хранилищем конфигурации",
+      "Параметры доступа к хранилищу",
+      "ConfigurationRepositoryP"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_configurationrepositoryp",
+    "relativePath": "parameters/repository-access/ConfigurationRepositoryP.md",
+    "syntax": [
+      "/ConfigurationRepositoryP <пароль>"
+    ],
+    "aliases": [
+      {
+        "pagePath": "zif3_configurationrepositoryp",
+        "toc_path": [
+          "Команды пакетного режима запуска конфигуратора",
+          "Команды работы с хранилищем конфигурации",
+          "Параметры доступа к хранилищу",
+          "ConfigurationRepositoryP"
+        ]
+      }
+    ]
+  }
+]

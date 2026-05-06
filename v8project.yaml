@@ -1,0 +1,12 @@
+# Dev-конфиг для v8-session-manager.
+# После extraction: только workPath + mcp.* (никаких base_path/connection/source-set).
+
+workPath: /tmp/v8-session-manager-dev
+
+mcp:
+  session_manager:
+    bind_address: "0.0.0.0:4000"
+    path: "/sessions"
+  http:
+    bind_address: "0.0.0.0:4001"
+    path: "/mcp"

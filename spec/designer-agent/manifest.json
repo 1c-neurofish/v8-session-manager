@@ -1,0 +1,914 @@
+[
+  {
+    "title": "Работа конфигуратора в режиме агента",
+    "kind": "overview",
+    "pagePath": "AgentMode",
+    "relativePath": "README.md",
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=AgentMode",
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime",
+      "local-help"
+    ],
+    "platformVersion": "8.3.27.1859, 8.5.1.1150",
+    "evidenceRef": [
+      "help:AgentMode",
+      "runtime:ssh-port-open"
+    ]
+  },
+  {
+    "title": "Request Surface",
+    "kind": "overview",
+    "pagePath": "runtime-request-surface",
+    "relativePath": "request-surface.md",
+    "sourceUrl": "runtime-observation://1cv8/8.3.27.1859/designer-agent/request-surface",
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime"
+    ],
+    "platformVersion": "8.3.27.1859, 8.5.1.1150",
+    "evidenceRef": [
+      "runtime:ssh-banner",
+      "runtime:ssh-userauth-password-only"
+    ]
+  },
+  {
+    "title": "AgentMode",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentMode",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentMode"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentMode",
+    "relativePath": "parameters/agent-mode/AgentMode.md",
+    "syntax": [
+      "/AgentMode"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime",
+      "local-help"
+    ],
+    "platformVersion": "8.3.27.1859",
+    "evidenceRef": [
+      "help:zif3_AgentMode",
+      "runtime:startup-explicit",
+      "runtime:startup-auto"
+    ]
+  },
+  {
+    "title": "AgentPort",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentPort",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentPort"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentPort",
+    "relativePath": "parameters/agent-mode/AgentPort.md",
+    "syntax": [
+      "/AgentPort <Порт>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime",
+      "local-help"
+    ],
+    "platformVersion": "8.3.27.1859",
+    "evidenceRef": [
+      "help:zif3_AgentPort",
+      "runtime:default-port-1543",
+      "runtime:custom-port-1544"
+    ]
+  },
+  {
+    "title": "AgentListenAddress",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentListenAddress",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentListenAddress"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentListenAddress",
+    "relativePath": "parameters/agent-mode/AgentListenAddress.md",
+    "syntax": [
+      "/AgentListenAddress <Адрес>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime",
+      "local-help"
+    ],
+    "platformVersion": "8.3.27.1859",
+    "evidenceRef": [
+      "help:zif3_AgentListenAddress",
+      "runtime:default-listen-127.0.0.1",
+      "runtime:explicit-listen-127.0.0.1"
+    ]
+  },
+  {
+    "title": "AgentSSHHostKey",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentSSHHostKey",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentSSHHostKey"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentSSHHostKey",
+    "relativePath": "parameters/agent-mode/AgentSSHHostKey.md",
+    "syntax": [
+      "/AgentSSHHostKey <приватный ключ>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime",
+      "local-help"
+    ],
+    "platformVersion": "8.3.27.1859",
+    "evidenceRef": [
+      "help:zif3_AgentSSHHostKey",
+      "runtime:explicit-host-key-ed25519"
+    ]
+  },
+  {
+    "title": "AgentSSHHostKeyAuto",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentSSHHostKeyAuto",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentSSHHostKeyAuto"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentSSHHostKeyAuto",
+    "relativePath": "parameters/agent-mode/AgentSSHHostKeyAuto.md",
+    "syntax": [
+      "/AgentSSHHostKeyAuto"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime",
+      "local-help"
+    ],
+    "platformVersion": "8.3.27.1859",
+    "evidenceRef": [
+      "help:zif3_AgentSSHHostKeyAuto",
+      "runtime:auto-host-key-host_id"
+    ]
+  },
+  {
+    "title": "AgentBaseDir",
+    "kind": "parameter",
+    "topGroup": "Команды работы в режиме агента",
+    "subgroup": "agent-mode",
+    "pagePath": "zif3_AgentBaseDir",
+    "tocPath": [
+      "Команды пакетного режима запуска конфигуратора",
+      "Команды работы в режиме агента",
+      "AgentBaseDir"
+    ],
+    "sourceUrl": "http://localhost:8080/ru/1%D0%A1%3A%D0%9F%D1%80%D0%B5%D0%B4%D0%BF%D1%80%D0%B8%D1%8F%D1%82%D0%B8%D0%B5?page=zif3_AgentBaseDir",
+    "relativePath": "parameters/agent-mode/AgentBaseDir.md",
+    "syntax": [
+      "/AgentBaseDir <рабочий каталог>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "local-help"
+    ],
+    "platformVersion": "8.3.27.1859",
+    "evidenceRef": [
+      "help:zif3_AgentBaseDir",
+      "runtime:custom-agent-basedir-accepted"
+    ]
+  },
+  {
+    "title": "Help",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "help",
+    "pagePath": "runtime-help-command",
+    "tocPath": [
+      "SSH shell commands",
+      "help"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help",
+    "relativePath": "commands/help/Help.md",
+    "syntax": [
+      "help [MODE]",
+      "help --version"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:ssh-shell-banner",
+      "runtime:help-version"
+    ]
+  },
+  {
+    "title": "ConnectIb",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "common",
+    "pagePath": "runtime-common-connect-ib",
+    "tocPath": [
+      "SSH shell commands",
+      "common",
+      "connect-ib"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/common/connect-ib",
+    "relativePath": "commands/common/ConnectIb.md",
+    "syntax": [
+      "common connect-ib"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:common-connect-ib-success"
+    ]
+  },
+  {
+    "title": "DisconnectIb",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "common",
+    "pagePath": "runtime-common-disconnect-ib",
+    "tocPath": [
+      "SSH shell commands",
+      "common",
+      "disconnect-ib"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/common/disconnect-ib",
+    "relativePath": "commands/common/DisconnectIb.md",
+    "syntax": [
+      "common disconnect-ib"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:common-disconnect-ib-success"
+    ]
+  },
+  {
+    "title": "Shutdown",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "common",
+    "pagePath": "runtime-common-shutdown",
+    "tocPath": [
+      "SSH shell commands",
+      "common",
+      "shutdown"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/common/shutdown",
+    "relativePath": "commands/common/Shutdown.md",
+    "syntax": [
+      "common shutdown"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:common-shutdown-session-close"
+    ]
+  },
+  {
+    "title": "List",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "options",
+    "pagePath": "runtime-options-list",
+    "tocPath": [
+      "SSH shell commands",
+      "options",
+      "list"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/options/list",
+    "relativePath": "commands/options/List.md",
+    "syntax": [
+      "options list"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:options-list"
+    ]
+  },
+  {
+    "title": "Get",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "options",
+    "pagePath": "runtime-options-get",
+    "tocPath": [
+      "SSH shell commands",
+      "options",
+      "get"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/options/get",
+    "relativePath": "commands/options/Get.md",
+    "syntax": [
+      "options get --output-format",
+      "options get --show-prompt"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:options-get-output-format",
+      "runtime:options-get-show-prompt"
+    ]
+  },
+  {
+    "title": "Set",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "options",
+    "pagePath": "runtime-options-set",
+    "tocPath": [
+      "SSH shell commands",
+      "options",
+      "set"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/options/set",
+    "relativePath": "commands/options/Set.md",
+    "syntax": [
+      "options set --output-format=<text|json>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:options-set-json",
+      "runtime:options-set-text"
+    ]
+  },
+  {
+    "title": "DumpConfigToFiles",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-dump-config-to-files",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "dump-config-to-files"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/DumpConfigToFiles.md",
+    "syntax": [
+      "config dump-config-to-files --dir=<path>"
+    ],
+    "aliases": [
+      "dump-files"
+    ],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "LoadConfigFromFiles",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-load-config-from-files",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "load-config-from-files"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/LoadConfigFromFiles.md",
+    "syntax": [
+      "config load-config-from-files --dir=<path>"
+    ],
+    "aliases": [
+      "load-files"
+    ],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "DumpExternalDataProcessorOrReportToFiles",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-dump-ext-files",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "dump-external-data-processor-or-report-to-files"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/DumpExternalDataProcessorOrReportToFiles.md",
+    "syntax": [
+      "config dump-external-data-processor-or-report-to-files --file=<file> --ext-file=<file>"
+    ],
+    "aliases": [
+      "dump-ext-files"
+    ],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "LoadExternalDataProcessorOrReportFromFiles",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-load-ext-files",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "load-external-data-processor-or-report-from-files"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/LoadExternalDataProcessorOrReportFromFiles.md",
+    "syntax": [
+      "config load-external-data-processor-or-report-from-files --file=<file> --ext-file=<file>"
+    ],
+    "aliases": [
+      "load-ext-files"
+    ],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "UpdateDbCfg",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-update-db-cfg",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "update-db-cfg"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/UpdateDbCfg.md",
+    "syntax": [
+      "config update-db-cfg [options]"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "SignCfg",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-sign-cfg",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "sign-cfg"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/SignCfg.md",
+    "syntax": [
+      "config sign-cfg --configuration-type=... --digi-sign=<file> --signed-file=<file>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "DebugInfo",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "infobase-tools",
+    "pagePath": "runtime-infobase-tools-debug-info",
+    "tocPath": [
+      "SSH shell commands",
+      "infobase-tools",
+      "debug-info"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/infobase-tools/debug-info",
+    "relativePath": "commands/infobase-tools/DebugInfo.md",
+    "syntax": [
+      "infobase-tools debug-info"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-runtime",
+    "confirmationMethod": [
+      "runtime"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:debug-info-json"
+    ]
+  },
+  {
+    "title": "RestoreIb",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "infobase-tools",
+    "pagePath": "runtime-infobase-tools-restore-ib",
+    "tocPath": [
+      "SSH shell commands",
+      "infobase-tools",
+      "restore-ib"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/infobase-tools",
+    "relativePath": "commands/infobase-tools/RestoreIb.md",
+    "syntax": [
+      "infobase-tools restore-ib --file=<file> [--threads=<n>]"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-infobase-tools"
+    ]
+  },
+  {
+    "title": "MobileAppWriteFile",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-mobile-app-write-file",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "mobile-app-write-file"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/MobileAppWriteFile.md",
+    "syntax": [
+      "config mobile-app-write-file --file=<file>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "MobileClientDigiSign",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-mobile-client-digi-sign",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "mobile-client-digi-sign"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/MobileClientDigiSign.md",
+    "syntax": [
+      "config mobile-client-digi-sign --file=<file>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "MobileClientWriteFile",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-mobile-client-write-file",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "mobile-client-write-file"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/MobileClientWriteFile.md",
+    "syntax": [
+      "config mobile-client-write-file --file=<file>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "DumpCfg",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-dump-cfg",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "dump-cfg"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/DumpCfg.md",
+    "syntax": [
+      "config dump-cfg --file=<file> [--extension=<extension name>]"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "LoadCfg",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-load-cfg",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "load-cfg"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/LoadCfg.md",
+    "syntax": [
+      "config load-cfg --file=<file> [--extension=<extension name>]"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "ManageCfgSupport",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-manage-cfg-support",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "manage-cfg-support"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/ManageCfgSupport.md",
+    "syntax": [
+      "config manage-cfg-support [--disable-support] [--force]"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "GenerationId",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-generation-id",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "generation-id"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/GenerationId.md",
+    "syntax": [
+      "config generation-id [--extension=<extension name>]"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "Extensions",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "config",
+    "pagePath": "runtime-config-extensions",
+    "tocPath": [
+      "SSH shell commands",
+      "config",
+      "extensions"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/config",
+    "relativePath": "commands/config/Extensions.md",
+    "syntax": [
+      "config extensions <subcommand> [options]"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-config"
+    ]
+  },
+  {
+    "title": "DataSeparationCommonAttributesList",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "infobase-tools",
+    "pagePath": "runtime-infobase-tools-data-separation-common-attributes-list",
+    "tocPath": [
+      "SSH shell commands",
+      "infobase-tools",
+      "data-separation-common-attributes-list"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/infobase-tools",
+    "relativePath": "commands/infobase-tools/DataSeparationCommonAttributesList.md",
+    "syntax": [
+      "infobase-tools data-separation-common-attributes-list"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-infobase-tools"
+    ]
+  },
+  {
+    "title": "DumpIb",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "infobase-tools",
+    "pagePath": "runtime-infobase-tools-dump-ib",
+    "tocPath": [
+      "SSH shell commands",
+      "infobase-tools",
+      "dump-ib"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/infobase-tools",
+    "relativePath": "commands/infobase-tools/DumpIb.md",
+    "syntax": [
+      "infobase-tools dump-ib --file=<file>"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-infobase-tools"
+    ]
+  },
+  {
+    "title": "EraseData",
+    "kind": "command",
+    "topGroup": "SSH shell commands",
+    "subgroup": "infobase-tools",
+    "pagePath": "runtime-infobase-tools-erase-data",
+    "tocPath": [
+      "SSH shell commands",
+      "infobase-tools",
+      "erase-data"
+    ],
+    "sourceUrl": "runtime-observation://1cv8/8.5.1.1150/designer-agent/help/infobase-tools",
+    "relativePath": "commands/infobase-tools/EraseData.md",
+    "syntax": [
+      "infobase-tools erase-data"
+    ],
+    "aliases": [],
+    "confirmationStatus": "confirmed-help",
+    "confirmationMethod": [
+      "runtime",
+      "shell-help"
+    ],
+    "platformVersion": "8.5.1.1150",
+    "evidenceRef": [
+      "runtime:help-infobase-tools"
+    ]
+  }
+]

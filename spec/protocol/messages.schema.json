@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/SteelMorgan/v8-client-session-manager/spec/protocol/messages.schema.json",
+  "title": "v8-client-session-manager wire protocol (stage 1)",
+  "description": "JSON-RPC 2.0 messages exchanged over WebSocket between manager and 1С client. See spec/SESSION_MANAGER.md §4.",
+  "$defs": {
+    "id": {
+      "description": "JSON-RPC id; opaque to receivers.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "integer" },
+        { "type": "null" }
+      ]
+    },
+
+    "request-envelope": {
+      "type": "object",
+      "required": ["jsonrpc", "method"],
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "$ref": "#/$defs/id" },
+        "method": { "type": "string", "minLength": 1 },
+        "params": { "type": ["object", "array", "null"] }
+      },
+      "additionalProperties": false
+    },
+
+    "response-success": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "$ref": "#/$defs/id" },
+        "result": {}
+      },
+      "additionalProperties": false
+    },
+
+    "response-error": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "error"],
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "$ref": "#/$defs/id" },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "integer" },
+            "message": { "type": "string" },
+            "data": {}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "notification": {
+      "type": "object",
+      "required": ["jsonrpc", "method"],
+      "not": { "required": ["id"] },
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "method": { "type": "string", "minLength": 1 },
+        "params": { "type": ["object", "array", "null"] }
+      },
+      "additionalProperties": false
+    },
+
+    "tool-descriptor": {
+      "description": "MCP tool descriptor as advertised by the 1С client.",
+      "type": "object",
+      "required": ["name", "input_schema"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "input_schema": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+
+    "session.register.params": {
+      "type": "object",
+      "required": ["client_uid", "kind", "version", "tools"],
+      "properties": {
+        "client_uid": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "version": { "type": "string" },
+        "tools": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tool-descriptor" }
+        },
+        "resources": { "type": "array" },
+        "prompts": { "type": "array" },
+        "extras": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+
+    "session.register.result": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "server_version",
+        "heartbeat_interval_ms",
+        "idle_timeout_secs"
+      ],
+      "properties": {
+        "session_id": { "type": "string", "minLength": 1 },
+        "server_version": { "type": "string" },
+        "heartbeat_interval_ms": { "type": "integer", "minimum": 1 },
+        "idle_timeout_secs": { "type": "integer", "minimum": 1 },
+        "reconnected": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "session.heartbeat.params": {
+      "type": "object",
+      "required": ["ts"],
+      "properties": {
+        "ts": { "type": "integer", "description": "Unix-time millis on the sender." }
+      },
+      "additionalProperties": false
+    },
+
+    "session.heartbeat.result": {
+      "type": "object",
+      "required": ["ts"],
+      "properties": {
+        "ts": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+
+    "session.bye.params": {
+      "type": "object",
+      "properties": {
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "session.bye.result": {
+      "type": "object",
+      "additionalProperties": false
+    },
+
+    "session.tools_changed.params": {
+      "type": "object",
+      "required": ["tools"],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tool-descriptor" }
+        },
+        "resources": { "type": "array" },
+        "prompts": { "type": "array" }
+      },
+      "additionalProperties": false
+    },
+
+    "session.tools_changed.result": {
+      "type": "object",
+      "additionalProperties": false
+    },
+
+    "ping.params": {
+      "type": "object",
+      "additionalProperties": false
+    },
+
+    "ping.result": {
+      "type": "object",
+      "required": ["ts"],
+      "properties": {
+        "ts": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+
+    "tool.content-block": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "json"],
+          "properties": {
+            "type": { "const": "json" },
+            "json": {}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "tool.call.params": {
+      "description": "Manager → client request to invoke a tool registered by the client (ADR-0023).",
+      "type": "object",
+      "required": ["name", "arguments"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "arguments": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+
+    "tool.call.result": {
+      "description": "Result of tool.call from client back to manager. Shape mirrors MCP CallToolResult.",
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tool.content-block" }
+        },
+        "is_error": { "type": "boolean" },
+        "structured_content": {}
+      },
+      "additionalProperties": false
+    },
+
+    "tool.cancel.params": {
+      "description": "Manager → client cancellation hint for an in-flight tool.call.",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "tool.cancel.result": {
+      "type": "object",
+      "additionalProperties": false
+    }
+  }
+}
