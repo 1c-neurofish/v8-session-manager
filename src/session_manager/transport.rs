@@ -28,11 +28,11 @@ use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::config::model::McpSessionManagerConfig;
 use crate::session_manager::connection::ConnectionHandle;
-use crate::session_manager::ping::{spawn_app_ping_task, AppPingConfig};
 use crate::session_manager::protocol::{
     error_codes, methods, EmptyResult, HeartbeatPayload, Id, JsonRpcError, SessionRegisterParams,
     SessionRegisterResult, SessionToolsChangedParams, WireMessage,
@@ -201,23 +201,115 @@ async fn run_connection(
     let (tx, mut rx) = mpsc::unbounded_channel::<WireMessage>();
     let connection = Arc::new(ConnectionHandle::new(tx.clone()));
 
-    // Writer task: отдельная задача отправляет всё, что приходит в канал.
-    // Это нужно, чтобы избежать гонок одновременной записи в WS sink.
+    // Liveness канала: WS protocol-level Ping (RFC 6455 opcode 0x9).
+    // Менеджер шлёт Ping каждые `ws_ping_interval_ms`; tokio-tungstenite
+    // на стороне клиента отвечает Pong автоматически без участия BSL —
+    // это намеренно, чтобы открытый модальный диалог или длинный BSL-
+    // обработчик не выглядели для менеджера как «зависание».
+    //
+    // Если за `ws_ping_timeout_ms` от клиента не пришло ни одного фрейма
+    // (Pong или Text), writer-task закрывает sink. CancellationToken
+    // сигналит reader-loop'у не ждать следующий фрейм, чтобы не зависнуть
+    // на полузакрытом сокете (peer не прислал FIN).
+    let last_inbound_at = Arc::new(std::sync::Mutex::new(Instant::now()));
+    let cancel = CancellationToken::new();
+
+    let ping_interval = Duration::from_millis(state.config.ws_ping_interval_ms);
+    let ping_timeout = Duration::from_millis(state.config.ws_ping_timeout_ms);
+    let last_inbound_for_writer = Arc::clone(&last_inbound_at);
+    let cancel_for_writer = cancel.clone();
+
     let writer = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            let text = msg.to_text();
-            if let Err(err) = sink.send(Message::Text(text.into())).await {
-                debug!(?err, "ws sink send failed; closing writer");
-                break;
+        let mut ticker = if ping_interval.is_zero() {
+            None
+        } else {
+            let mut t = tokio::time::interval(ping_interval);
+            // Skip первый immediate tick — иначе шлём Ping ещё до того, как
+            // клиент успел зарегистрироваться.
+            t.tick().await;
+            t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            Some(t)
+        };
+
+        loop {
+            if let Some(ref mut t) = ticker {
+                tokio::select! {
+                    biased;
+                    msg = rx.recv() => {
+                        match msg {
+                            Some(m) => {
+                                if let Err(err) = sink
+                                    .send(Message::Text(m.to_text().into()))
+                                    .await
+                                {
+                                    debug!(?err, "ws sink send failed; closing writer");
+                                    break;
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                    _ = t.tick() => {
+                        if !ping_timeout.is_zero() {
+                            let elapsed = last_inbound_for_writer
+                                .lock()
+                                .expect("last_inbound poisoned")
+                                .elapsed();
+                            if elapsed > ping_timeout {
+                                info!(
+                                    elapsed_ms = elapsed.as_millis() as u64,
+                                    timeout_ms = ping_timeout.as_millis() as u64,
+                                    "ws keep-alive timeout — no inbound frames; closing connection",
+                                );
+                                cancel_for_writer.cancel();
+                                break;
+                            }
+                        }
+                        if let Err(err) = sink.send(Message::Ping(Vec::new().into())).await {
+                            debug!(?err, "ws ping send failed; closing writer");
+                            break;
+                        }
+                    }
+                    _ = cancel_for_writer.cancelled() => break,
+                }
+            } else {
+                tokio::select! {
+                    biased;
+                    msg = rx.recv() => {
+                        match msg {
+                            Some(m) => {
+                                if let Err(err) = sink
+                                    .send(Message::Text(m.to_text().into()))
+                                    .await
+                                {
+                                    debug!(?err, "ws sink send failed; closing writer");
+                                    break;
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                    _ = cancel_for_writer.cancelled() => break,
+                }
             }
         }
         let _ = sink.close().await;
     });
 
     let result = loop {
-        let msg = match stream.next().await {
+        let frame = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                debug!("ws reader cancelled by writer (keep-alive timeout)");
+                break Err(ConnectionError::Ws("ws keep-alive timeout".to_owned()));
+            }
+            f = stream.next() => f,
+        };
+
+        let msg = match frame {
             Some(Ok(m)) => {
                 debug!(kind = ?std::mem::discriminant(&m), "ws frame received");
+                *last_inbound_at.lock().expect("last_inbound poisoned") = Instant::now();
                 m
             }
             Some(Err(err)) => {
@@ -259,10 +351,13 @@ async fn run_connection(
                 // axum ответит pong сам.
                 debug!(payload_len = payload.len(), "ws ping received");
             }
-            Message::Pong(_) => {}
+            Message::Pong(_) => {
+                debug!("ws pong received");
+            }
             Message::Close(_) => break Ok(()),
         }
     };
+    cancel.cancel();
 
     // Закрываем outbound‑канал: writer выйдет, когда последний sender дропнут.
     // drain_pending обнуляет sender внутри ConnectionHandle (важно — он живёт
@@ -368,21 +463,11 @@ async fn handle_request(
                         id,
                         result: Ok(value),
                     });
-                    // Application-level ping: liveness BSL event-loop. WS
-                    // ping/pong от tungstenite не покрывают зависание
-                    // обработчика 1С. Generation-aware: на soft reconnect
-                    // старая task завершится по `Disconnected` (старый
-                    // ConnectionHandle уже drained), новая стартует здесь.
-                    spawn_app_ping_task(
-                        Arc::clone(connection),
-                        Arc::clone(&state.registry),
-                        client_uid,
-                        generation,
-                        AppPingConfig::from_ms(
-                            state.config.app_ping_interval_ms,
-                            state.config.app_ping_timeout_ms,
-                        ),
-                    );
+                    // Liveness канала держит WS Ping/Pong в writer-task
+                    // (см. `run_connection`). Application-level ping не
+                    // используется: 1С может легитимно «не отвечать»
+                    // на BSL-уровне (открытая модалка, длинный запрос).
+                    let _ = (client_uid, generation);
                 }
                 Err(RegisterError::UidCollision(uid)) => {
                     send_error(
@@ -432,13 +517,9 @@ async fn handle_request(
             *peer.inner.lock().expect("ctx poisoned") = None;
             Err(ConnectionError::Bye)
         }
-        methods::PING => {
-            let _ = tx.send(WireMessage::Response {
-                id,
-                result: Ok(json!({})),
-            });
-            Ok(())
-        }
+        // Application-level `ping` handler удалён: liveness держится на
+        // WS protocol-level Ping/Pong (см. `run_connection`). Если кто-то
+        // всё-таки шлёт `ping` JSON-RPC — вернётся METHOD_NOT_FOUND.
         other => {
             send_error(
                 tx,
@@ -505,16 +586,22 @@ mod tests {
             idle_timeout_secs: 1800,
             reconnection_grace_secs: 1,
             graceful_kill_grace_ms: 5_000,
-            // Тесты транспорта не зависят от ping-инициатора. Отключаем,
-            // чтобы ping-task не дёргала фейковый ConnectionHandle.
-            app_ping_interval_ms: 0,
-            app_ping_timeout_ms: 0,
+            // Тесты транспорта по-умолчанию не зависят от WS keep-alive.
+            // Отдельные тесты переопределяют интервалы.
+            ws_ping_interval_ms: 0,
+            ws_ping_timeout_ms: 0,
         }
     }
 
     async fn boot() -> (Arc<SessionRegistry>, RunningTransport, String) {
+        boot_with(test_config()).await
+    }
+
+    async fn boot_with(
+        config: McpSessionManagerConfig,
+    ) -> (Arc<SessionRegistry>, RunningTransport, String) {
         let registry = Arc::new(SessionRegistry::new());
-        let running = start(Arc::clone(&registry), test_config(), "test-1.0")
+        let running = start(Arc::clone(&registry), config, "test-1.0")
             .await
             .expect("start");
         let url = format!("ws://{}/sessions", running.local_addr);
@@ -765,7 +852,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ping_responds_with_empty_object() {
+    async fn application_ping_method_returns_method_not_found() {
+        // App-level `ping` удалён в пользу WS protocol-level Ping/Pong.
+        // Если клиент по-старому шлёт JSON-RPC ping — должен прийти
+        // стандартный METHOD_NOT_FOUND.
         let (_registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
         let req = WireMessage::Request {
@@ -781,7 +871,8 @@ mod tests {
         match parsed {
             WireMessage::Response { id, result } => {
                 assert_eq!(id, Id::Number(7));
-                assert!(result.is_ok());
+                let err = result.expect_err("ping must be METHOD_NOT_FOUND");
+                assert_eq!(err.code, error_codes::METHOD_NOT_FOUND);
             }
             other => panic!("unexpected: {other:?}"),
         }
@@ -1012,6 +1103,94 @@ mod tests {
             crate::session_manager::connection::ConnectionCallError::Disconnected
         ));
 
+        running.shutdown();
+    }
+
+    fn keepalive_config(interval_ms: u64, timeout_ms: u64) -> McpSessionManagerConfig {
+        let mut c = test_config();
+        c.ws_ping_interval_ms = interval_ms;
+        c.ws_ping_timeout_ms = timeout_ms;
+        // grace=1s в test_config — для keep-alive тестов хватит.
+        c
+    }
+
+    #[tokio::test]
+    async fn ws_keepalive_drops_session_when_no_pong_arrives() {
+        // Boot с агрессивными интервалами: ping каждые 100мс, timeout 250мс.
+        // Клиент tokio_tungstenite по дефолту авто-Pong'ает; чтобы ИМИТИРОВАТЬ
+        // зависший peer, перехватываем все входящие фреймы вручную и не
+        // отвечаем на Ping. Tungstenite-клиент шлёт Pong автоматически
+        // только когда `next()` обрабатывает Ping; если мы ни разу не дёрнем
+        // `next()`, Pong не отправится.
+        let config = keepalive_config(100, 250);
+        let (registry, running, url) = boot_with(config).await;
+
+        let mut ws = connect(&url).await;
+        ws.send(WsMessage::Text(
+            register_text("uid-keepalive", "client", "x").into(),
+        ))
+        .await
+        .unwrap();
+        let _ = next_text(&mut ws).await;
+        assert_eq!(registry.len(), 1);
+
+        // НЕ читаем из ws — auto-Pong не сработает. Ждём, пока менеджер
+        // решит, что peer мёртв (timeout=250мс + sweep до Disconnected).
+        for _ in 0..100 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            if let Some(rec) = registry.get("uid-keepalive") {
+                if rec.state == crate::session_manager::registry::SessionState::Disconnected {
+                    break;
+                }
+            }
+        }
+        let rec = registry
+            .get("uid-keepalive")
+            .expect("session still in registry (Disconnected)");
+        assert_eq!(
+            rec.state,
+            crate::session_manager::registry::SessionState::Disconnected,
+            "keep-alive timeout should mark session Disconnected"
+        );
+
+        drop(ws);
+        running.shutdown();
+    }
+
+    #[tokio::test]
+    async fn ws_keepalive_keeps_session_alive_with_auto_pong() {
+        // Те же агрессивные интервалы, но клиент крутит `next()` в фоне —
+        // tungstenite авто-Pong'ает. Сессия должна остаться Active.
+        let config = keepalive_config(100, 300);
+        let (registry, running, url) = boot_with(config).await;
+
+        let ws = connect(&url).await;
+        let (mut sink, mut stream) = ws.split();
+        sink.send(WsMessage::Text(
+            register_text("uid-alive", "client", "x").into(),
+        ))
+        .await
+        .unwrap();
+
+        // Pump фоновой task'ой: читаем фреймы (auto-Pong на Ping), забываем результат.
+        let pump = tokio::spawn(async move {
+            while let Some(Ok(_msg)) = stream.next().await {
+                // авто-Pong отрабатывает в момент чтения Ping
+            }
+        });
+
+        // Ждём заметно дольше timeout (300мс) — сессия должна остаться Active.
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
+        let rec = registry.get("uid-alive").expect("still here");
+        assert_eq!(
+            rec.state,
+            crate::session_manager::registry::SessionState::Active,
+            "auto-Pong from tungstenite must keep session Active",
+        );
+
+        pump.abort();
+        sink.close().await.ok();
         running.shutdown();
     }
 }

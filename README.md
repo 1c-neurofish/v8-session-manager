@@ -146,8 +146,8 @@ curl -sS -X POST http://127.0.0.1:4001/mcp \
 | `mcp.session_manager.idle_timeout_secs` | Idle-таймаут сессии | `1800` |
 | `mcp.session_manager.reconnection_grace_secs` | Окно soft-reconnect | `30` |
 | `mcp.session_manager.graceful_kill_grace_ms` | Grace на корректное закрытие WS | `5000` |
-| `mcp.session_manager.app_ping_interval_ms` | Период application-level JSON-RPC `ping` от менеджера к клиенту (`0` — отключено) | `20000` |
-| `mcp.session_manager.app_ping_timeout_ms` | Таймаут ответа на `ping`. По истечении сессия → `Disconnected` | `5000` |
+| `mcp.session_manager.ws_ping_interval_ms` | Период WS protocol-level Ping (RFC 6455) от менеджера к клиенту (`0` — отключено) | `20000` |
+| `mcp.session_manager.ws_ping_timeout_ms` | Таймаут отсутствия любых входящих фреймов (Pong / Text). По истечении соединение закрывается, сессия → `Disconnected` | `30000` |
 | `mcp.http.bind_address` | Bind MCP HTTP для AI-агентов | `127.0.0.1:4001` |
 | `mcp.http.path` | MCP HTTP path | `/mcp` |
 | `mcp.http.stateful_sessions` | Включить stateful HTTP-сессии MCP | `true` |

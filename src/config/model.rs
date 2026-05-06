@@ -127,12 +127,18 @@ pub struct McpSessionManagerConfig {
     pub idle_timeout_secs: u64,
     pub reconnection_grace_secs: u64,
     pub graceful_kill_grace_ms: u64,
-    /// Интервал application-level `ping` от менеджера к клиенту, мс.
-    /// `0` — пинг отключён. По умолчанию 20000 мс.
-    pub app_ping_interval_ms: u64,
-    /// Таймаут ожидания ответа на `ping`, мс. По истечении сессия
-    /// помечается `Disconnected`. По умолчанию 5000 мс.
-    pub app_ping_timeout_ms: u64,
+    /// Интервал WS protocol-level Ping (RFC 6455 opcode 0x9), мс. Менеджер
+    /// шлёт Ping каждому подключённому клиенту в writer-task; tokio-
+    /// tungstenite на стороне addin отвечает Pong автоматически без
+    /// участия BSL. Поддерживает канал живым (NAT/half-close detection).
+    /// `0` — Ping отключён. По умолчанию 20000 мс.
+    pub ws_ping_interval_ms: u64,
+    /// Таймаут отсутствия Pong, мс. Если за это время от клиента не
+    /// пришло ни одного Pong и ни одного входящего фрейма — менеджер
+    /// закрывает соединение и через grace timeout удаляет запись.
+    /// Должен быть `>= ws_ping_interval_ms` (иначе постоянно false-positive).
+    /// По умолчанию 30000 мс.
+    pub ws_ping_timeout_ms: u64,
 }
 
 impl Default for McpSessionManagerConfig {
@@ -144,8 +150,8 @@ impl Default for McpSessionManagerConfig {
             idle_timeout_secs: default_mcp_session_manager_idle_timeout_secs(),
             reconnection_grace_secs: default_mcp_session_manager_reconnection_grace_secs(),
             graceful_kill_grace_ms: default_mcp_session_manager_graceful_kill_grace_ms(),
-            app_ping_interval_ms: default_mcp_session_manager_app_ping_interval_ms(),
-            app_ping_timeout_ms: default_mcp_session_manager_app_ping_timeout_ms(),
+            ws_ping_interval_ms: default_mcp_session_manager_ws_ping_interval_ms(),
+            ws_ping_timeout_ms: default_mcp_session_manager_ws_ping_timeout_ms(),
         }
     }
 }
@@ -198,10 +204,10 @@ const fn default_mcp_session_manager_graceful_kill_grace_ms() -> u64 {
     5_000
 }
 
-const fn default_mcp_session_manager_app_ping_interval_ms() -> u64 {
+const fn default_mcp_session_manager_ws_ping_interval_ms() -> u64 {
     20_000
 }
 
-const fn default_mcp_session_manager_app_ping_timeout_ms() -> u64 {
-    5_000
+const fn default_mcp_session_manager_ws_ping_timeout_ms() -> u64 {
+    30_000
 }
