@@ -3,6 +3,14 @@
 - Статус: `accepted`
 - Дата: `2026-04-28`
 
+> **Update 2026-05-06:** ниже упоминается, что Rust-слой addin шлёт
+> `session.heartbeat` в фоне без `external_event`. Это рассуждение
+> остаётся актуальным как мотивация — но в текущем runtime application-level
+> `session.heartbeat` удалён, и роль liveness, не зависящего от BSL,
+> играет WS protocol-level Ping/Pong (RFC 6455): tokio-tungstenite в
+> addin отвечает Pong автоматически. Аргумент про неблокирующий liveness
+> при длинных inflight tool.call — сохраняется и усиливается.
+
 ## Контекст
 
 1С‑клиент обрабатывает входящие `MCP_TOOL_CALL` через однопоточный механизм `external_event` (`web-transport-addin/src/mcp/server.rs`, `src/mcp/addin.rs`). Длительность одного вызова **не ограничена 30 секундами**: `response_timeout` в `mcp_start` (default 30 сек) — это окно ожидания **между прогресс‑сигналами**, а не hard‑limit на tool.call. Пока 1С‑код шлёт сигналы прогресса по `request_id`, таймаут сбрасывается; yaxunit‑прогон или VA‑сценарий на минуты — штатный сценарий (см. `wait_for_response` и тест `wait_for_response_resets_timeout_on_progress` в `server.rs`).

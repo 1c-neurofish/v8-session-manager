@@ -3,9 +3,14 @@
 - Статус: `accepted`
 - Дата: `2026-04-28`
 
+> **Update 2026-05-06:** application-level `session.heartbeat`, упомянутый ниже,
+> удалён из runtime. Liveness канала держит WS protocol-level Ping/Pong
+> (RFC 6455). Текст ниже сохраняется как контекст принятия решения; актуальный
+> список control-plane методов — в `spec/SESSION_MANAGER.md` §4.3.
+
 ## Контекст
 
-Этап 1 транспорта обрабатывает только направление `client → manager`: `session.register`, `session.heartbeat`, `session.bye`, `session.tools_changed`. Входящие `WireMessage::Response` сейчас игнорируются (`session_manager/transport.rs::dispatch()` явно их `debug!`-логирует и не использует).
+Этап 1 транспорта обрабатывает только направление `client → manager`: `session.register`, `session.bye`, `session.tools_changed`. Входящие `WireMessage::Response` сейчас игнорируются (`session_manager/transport.rs::dispatch()` явно их `debug!`-логирует и не использует).
 
 Этап 2 (proxy `tool.call`) требует обратного направления: менеджер шлёт клиенту `Request{ id, method:"tool.call", params }`, ждёт `Response{ id, result|error }` от того же клиента. Значит per‑session нужен:
 
@@ -44,7 +49,7 @@ Bidirectional JSON‑RPC поверх **одного** WS (вариант 3):
    `ConnectionCallError` различает: `Timeout`, `Disconnected` (`-32011 session_gone`), `Rejected(JsonRpcError)`, `Cancelled`.
 5. На `mark_disconnected` все pending'и завершаются `Disconnected` (одно прокручивание hashmap, очистка таблицы). На soft reconnect — pending пуст по построению (мы только что прошли через mark_disconnected); новый `ConnectionHandle` получает свежий `next_id` и `pending`.
 6. Контракт неймспейсов методов:
-   - `client → manager`: `session.*` (register/heartbeat/bye/tools_changed) — есть на этапе 1.
+   - `client → manager`: `session.*` (register/bye/tools_changed) — есть на этапе 1.
    - `manager → client`: `tool.*` (`tool.call`, `tool.cancel`) — детали shape см. в спеке §4.x (обновляется параллельно ADR‑0023) и в JSON Schema.
    - Двусторонний `ping` — обе стороны могут инициировать.
 

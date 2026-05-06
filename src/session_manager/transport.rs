@@ -9,8 +9,10 @@
 //! помечает сессию `Disconnected` (если она была зарегистрирована); удаление
 //! по grace выполняет фоновый sweeper.
 //!
-//! Этап 1: только control-plane (`session.register`/`heartbeat`/`bye`/
-//! `tools_changed`/`ping`). `tool.call` не проксируется — это задача этапа 2.
+//! Control-plane: `session.register` / `session.bye` / `session.tools_changed`
+//! от клиента; `tool.call` / `tool.cancel` / `session.shutdown` от менеджера.
+//! Liveness канала держится на WS protocol-level Ping/Pong (RFC 6455) из
+//! writer-task — application-level heartbeat не используется.
 
 #![allow(dead_code)]
 
@@ -24,7 +26,6 @@ use axum::response::Response;
 use axum::routing::any;
 use axum::Router;
 use futures_util::{SinkExt, StreamExt};
-use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -34,7 +35,7 @@ use tracing::{debug, error, info, warn};
 use crate::config::model::McpSessionManagerConfig;
 use crate::session_manager::connection::ConnectionHandle;
 use crate::session_manager::protocol::{
-    error_codes, methods, EmptyResult, HeartbeatPayload, Id, JsonRpcError, SessionRegisterParams,
+    error_codes, methods, EmptyResult, Id, JsonRpcError, SessionRegisterParams,
     SessionRegisterResult, SessionToolsChangedParams, WireMessage,
 };
 use crate::session_manager::registry::{RegisterError, RegisterOutcome, SessionRegistry};
@@ -480,16 +481,6 @@ async fn handle_request(
             }
             Ok(())
         }
-        methods::SESSION_HEARTBEAT => {
-            // Не требуем регистрации; heartbeat без регистрации — просто отвечаем эхом.
-            let payload: HeartbeatPayload =
-                serde_json::from_value(params).unwrap_or(HeartbeatPayload { ts: 0 });
-            let _ = tx.send(WireMessage::Response {
-                id,
-                result: Ok(serde_json::to_value(payload).expect("heartbeat")),
-            });
-            Ok(())
-        }
         methods::SESSION_BYE => {
             let identity = peer.identity();
             if let Some(ref ident) = identity {
@@ -575,7 +566,7 @@ fn send_error(
 mod tests {
     use super::*;
     use crate::session_manager::protocol::ToolDescriptor;
-    use serde_json::Value;
+    use serde_json::{json, Value};
     use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 
     fn test_config() -> McpSessionManagerConfig {
