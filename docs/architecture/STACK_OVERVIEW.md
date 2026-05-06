@@ -65,15 +65,14 @@ flowchart TB
 3. WS frame уходит в addin → devkit BSL → нужный handler в L2-расширении.
 4. Результат поднимается обратно: BSL → addin → WS → менеджер → MCP HTTP → агент.
 
-### Liveness-check (application-level ping)
+### Liveness канала (WS protocol-level Ping/Pong, RFC 6455)
 
-После регистрации менеджер запускает фоновую задачу `spawn_app_ping_task` (`src/session_manager/ping.rs`), которая раз в `app_ping_interval_ms` (default 20000) шлёт клиенту JSON-RPC `ping` через `ConnectionHandle::call`. Клиент отвечает пустым `result` из BSL-обработчика.
+Менеджер раз в `ws_ping_interval_ms` (default 20000) шлёт каждому подключённому клиенту WS Ping (opcode 0x9) прямо из writer-task в `run_connection`. Tokio-tungstenite на стороне addin отвечает Pong автоматически, **без участия BSL** — это намеренно. Для каждой сессии менеджер ведёт `last_inbound_at`: любой входящий фрейм (Pong, Text, …) обновляет таймстемп.
 
-- Если ответа нет за `app_ping_timeout_ms` (default 5000) или коннект уже мёртвый (`WriterClosed`) — менеджер вызывает `mark_disconnected_if_generation`, дренит `ConnectionHandle`, и через `reconnection_grace_secs` запись удаляется (`run_grace_sweeper`).
-- Generation-aware: при soft-reconnect старая ping-task завершается естественно — её `ConnectionHandle` уже drained, следующий `call` вернёт `Disconnected`.
-- WS protocol-level Ping/Pong (RFC 6455) намеренно не инициируется ни менеджером, ни addin'ом: tokio_tungstenite автоматически отвечает Pong на входящие, но это не доказывает живость BSL event-loop. Application-level ping — единственный надёжный сигнал «1С отвечает», потому что обработчик `method = "ping"` исполняется в самом event-loop'е.
+- Если за `ws_ping_timeout_ms` (default 30000) от клиента не пришло ни одного фрейма — writer-task закрывает sink, `CancellationToken` будит reader, тот выходит. Дальше штатный путь: WS-loop в `handle_socket` вызывает `mark_disconnected_if_generation`, через `reconnection_grace_secs` запись удаляет `run_grace_sweeper`.
+- `ws_ping_interval_ms = 0` отключает Ping (например, для интеграционных сценариев, где liveness держит другая инфраструктура).
 
-`app_ping_interval_ms = 0` отключает ping-инициатор (для тестов или сценариев с собственным liveness-механизмом).
+**Что мы намеренно не делаем:** application-level JSON-RPC ping не используется. Открытый модальный диалог 1С (`Вопрос(...)`, `ОткрытьФормуМодально`) или длинный серверный запрос блокируют BSL event-loop, но это **легитимные пользовательские состояния**, а не «зависание». TCP/WS канал в этот момент жив (tokio worker addin'а отвечает Pong), и менеджер не должен ложно сбрасывать сессию. Если вам нужна именно прикладная reachability — реализуйте её отдельным MCP-tool'ом, не путая с liveness канала.
 
 ### Soft-reconnect
 
