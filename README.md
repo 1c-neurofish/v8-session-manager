@@ -260,10 +260,10 @@ sudo systemctl status v8-session-manager
 - `docs/architecture/arc42/` — описание архитектуры в формате arc42.
 - `ARCHITECTURE.md` — обзорный документ верхнего уровня.
 
-> ADR-0001..0017 относятся к историческому v8-runner CLI и помечены
-> как `superseded` либо неактуальны для текущего бинарника. ADR-0027
-> (system capability vs MCP tools) переведён в `superseded` после
-> урезания менеджера до агрегатора.
+> ADR-0001..0017 и ADR-0027 относились к историческому v8-runner CLI и
+> были удалены после extraction (см. ADR-0033). Если нужна их история —
+> она доступна в исходном репозитории `v8-runner` либо в git-логе до
+> коммита `chore: drop v8-runner ADRs`.
 
 ## Лицензия
 
