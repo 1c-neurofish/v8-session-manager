@@ -133,6 +133,77 @@ curl -sS -X POST http://127.0.0.1:4001/mcp \
 повторный `tools/list` покажет встроенный `session_list` плюс
 проксированные тулы клиентов с префиксом `<prefix>__<tool>`.
 
+## Раскладка конфигов в репозитории
+
+Один и тот же формат конфига (см. секцию [Конфиг](#конфиг-v8projectyaml))
+используется в трёх вариантах раскладки в зависимости от способа запуска:
+
+| Файл | Назначение | Запуск |
+|------|------------|--------|
+| `v8project.yaml` | Дефолтный dev-конфиг репозитория. Загружается автоматически при `cargo run` без флагов. | `cargo run --release` |
+| `examples/local-dev.yaml` | Полный dev-конфиг (то, что раньше держали в `/tmp/v8sm.yaml`): bind на `0.0.0.0`, `/tmp/v8sm` для workPath, метрики выключены. | `./target/release/v8-session-manager --config examples/local-dev.yaml` |
+| `etc/v8-session-manager/v8sm.yaml` | Production-baseline для systemd-инсталляции на bare-metal: bind на loopback, workPath `/var/lib/v8-session-manager`, готов под reverse-proxy. | через systemd-юнит `systemd/v8-session-manager.service` |
+| `docker/v8project.yaml` | Контейнерный конфиг (см. `Dockerfile`, `docker-compose.yml`). | `docker compose up` |
+
+Системный установочный flow:
+
+```bash
+# 1. Сборка
+cargo build --release
+
+# 2. Установка бинаря и юнита
+sudo install -m 0755 target/release/v8-session-manager /usr/local/bin/
+sudo install -m 0644 systemd/v8-session-manager.service /etc/systemd/system/
+
+# 3. Создание системного пользователя и каталогов
+sudo useradd -r -s /usr/sbin/nologin -d /var/lib/v8-session-manager v8sm
+sudo install -d -o v8sm -g v8sm /var/lib/v8-session-manager
+sudo install -d -o root  -g v8sm -m 0750 /etc/v8-session-manager
+
+# 4. Установка конфига
+sudo install -m 0640 -o root -g v8sm \
+    etc/v8-session-manager/v8sm.yaml \
+    /etc/v8-session-manager/v8sm.yaml
+
+# 5. Запуск
+sudo systemctl daemon-reload
+sudo systemctl enable --now v8-session-manager
+sudo systemctl status v8-session-manager
+```
+
+Логи: `journalctl -u v8-session-manager -f`.
+
+## Параметры запуска 1С-клиента (`/C`)
+
+Менеджер сам 1С не запускает; к нему подключаются 1С-клиенты, которые
+получили адрес и режим через `/C` при старте платформы. Эти ключи
+обрабатываются BSL-расширением `client_mcp` (см.
+[`onec-client-mcp-devkit`](../onec-client-mcp-devkit)) — менеджеру
+важно лишь, какие значения он увидит в `session.register` и какие
+последствия будут на стороне реестра сессий.
+
+Формат: пары `key=value`, разделённые `;`. Пример:
+
+```text
+/C"mcpMode=ws;manager_url=ws://127.0.0.1:4000/sessions;kind=client_drive;client_uid=...;mcp_log_level=info"
+```
+
+| Ключ | Значения | Назначение | По умолчанию |
+|------|----------|------------|--------------|
+| `mcpMode` | `ws`, `http`, `auto` | Транспорт. `ws` — подключиться к менеджеру; `http` — поднять локальный HTTP MCP-сервер (legacy); `auto` — сначала WS, при неудаче за `mcp_ws_timeout_ms` падать на HTTP. Без ключа — старая ветка `runMcp=` для HTTP. | (нет) |
+| `manager_url` | `ws://host:port/sessions` | URL WS-менеджера для режимов `ws`/`auto`. | `ws://127.0.0.1:4000/sessions` |
+| `client_uid` | UUID-строка | Стабильный идентификатор клиента; используется менеджером для soft-reconnect (ADR-0022). При повторном открытии того же клиента **обязан** совпадать. | автогенерация UUID |
+| `kind` | произвольная строка-идентификатор | Namespace для публикации тулов на MCP HTTP (`<kind>__<tool>`), а также бизнес-роль клиента. Особое значение `vanessa_test_client` — тулы не публикуются под префиксом (см. `router.rs`). | `1c-client` |
+| `corr_id` | произвольная строка | Correlation id для трассировки запуска в логах менеджера (полезно при spawn'е цепочек). | (пусто) |
+| `mcp_log_level` | `off`, `error`, `warn`, `info`, `debug`, `trace` | Уровень логирования BSL-логгера и транспортной компоненты. Девкит подаёт это же значение во внешнюю компоненту через `НастроитьЛогирование(level)` — она маппит его на свой `tracing`-фильтр. На уровнях `trace/debug/info` логгер девкита также дублирует записи в панель `Сообщить` (UI-диагностика); на `warn/error/off` — пишет только в файл `%TEMP%\mcp-client.log`. | `off` (логи выключены) |
+| `mcp_ws_timeout_ms` | целое число, мс | Таймаут установления WS-сессии в режиме `auto` (после которого включается HTTP fallback). | `1000` |
+| `runMcp` | пусто или путь к JSON-конфигу | Legacy: поднять локальный HTTP MCP-сервер. Сосуществует с `mcpMode=http`/`auto`. | (нет) |
+| `mcpPort` | целое число, порт | Legacy: переопределение порта локального HTTP MCP-сервера. | `8080` |
+
+> Полный разбор парсинга — `onec-client-mcp-devkit/exts/client-mcp/.../Мсп_ПараметрыЗапускаКлиент/Module.bsl`,
+> функции `РазобратьПараметрЗапуска`, `ИзвлечьПараметрыWS`,
+> `ПрименитьЛогированиеИзПараметраЗапуска`.
+
 ## Конфиг (`v8project.yaml`)
 
 Плоский YAML, секции `mcp.execution` и `mcp.metrics` опциональны.
