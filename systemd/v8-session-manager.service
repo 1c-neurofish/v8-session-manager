@@ -1,0 +1,48 @@
+[Unit]
+Description=v8-session-manager — WS-роутер для 1С-клиентов и MCP HTTP для AI-агентов
+Documentation=https://github.com/SteelMorgan/v8-client-session-manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Бинарь и конфиг.
+# Установка: cargo build --release && sudo cp target/release/v8-session-manager /usr/local/bin/
+ExecStart=/usr/local/bin/v8-session-manager --config /etc/v8-session-manager/v8sm.yaml
+
+# Выделенный системный пользователь. Создаётся пакетом или вручную:
+#   sudo useradd -r -s /usr/sbin/nologin -d /var/lib/v8-session-manager v8sm
+#   sudo install -d -o v8sm -g v8sm /var/lib/v8-session-manager
+#   sudo install -d -o root  -g v8sm -m 0750 /etc/v8-session-manager
+#   sudo install -m 0640 -o root -g v8sm /path/to/v8sm.yaml /etc/v8-session-manager/v8sm.yaml
+User=v8sm
+Group=v8sm
+WorkingDirectory=/var/lib/v8-session-manager
+
+# Перезапуск при падении.
+Restart=on-failure
+RestartSec=5s
+
+# Корректный shutdown — SIGTERM, ждём столько же, сколько config.execution.shutdown_grace_period_secs.
+KillSignal=SIGTERM
+TimeoutStopSec=35
+
+# Hardening (минимально-достаточный набор, не ломающий обычный workflow).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/v8-session-manager
+
+# Журналирование в journald.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=v8-session-manager
+
+# Лимиты.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

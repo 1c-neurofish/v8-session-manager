@@ -1,0 +1,28 @@
+# Dev-конфиг v8-session-manager для разработки.
+#
+# Отличия от production (etc/v8-session-manager/v8sm.yaml):
+# - workPath: /tmp/v8sm — эфемерный каталог, чистится при перезагрузке
+# - bind_address на 0.0.0.0 — клиенты могут быть в Docker-сети devcontainer'а
+# - metrics выключены (bind_address: "")
+#
+# Запуск:
+#   ./target/release/v8-session-manager --config examples/local-dev.yaml
+#
+# Этот файл — реальный baseline разработки, который раньше жил в /tmp/v8sm.yaml.
+# Переехал в репо для воспроизводимости и review.
+
+workPath: /tmp/v8sm
+
+mcp:
+  session_manager:
+    bind_address: "0.0.0.0:4000"
+    path: "/sessions"
+    ws_ping_interval_ms: 20000
+    ws_ping_timeout_ms: 30000
+
+  http:
+    bind_address: "0.0.0.0:4001"
+    path: "/mcp"
+
+  metrics:
+    bind_address: ""

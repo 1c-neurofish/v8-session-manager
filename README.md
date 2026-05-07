@@ -133,6 +133,46 @@ curl -sS -X POST http://127.0.0.1:4001/mcp \
 повторный `tools/list` покажет встроенный `session_list` плюс
 проксированные тулы клиентов с префиксом `<prefix>__<tool>`.
 
+## Раскладка конфигов в репозитории
+
+Один и тот же формат конфига (см. секцию [Конфиг](#конфиг-v8projectyaml))
+используется в трёх вариантах раскладки в зависимости от способа запуска:
+
+| Файл | Назначение | Запуск |
+|------|------------|--------|
+| `v8project.yaml` | Дефолтный dev-конфиг репозитория. Загружается автоматически при `cargo run` без флагов. | `cargo run --release` |
+| `examples/local-dev.yaml` | Полный dev-конфиг (то, что раньше держали в `/tmp/v8sm.yaml`): bind на `0.0.0.0`, `/tmp/v8sm` для workPath, метрики выключены. | `./target/release/v8-session-manager --config examples/local-dev.yaml` |
+| `etc/v8-session-manager/v8sm.yaml` | Production-baseline для systemd-инсталляции на bare-metal: bind на loopback, workPath `/var/lib/v8-session-manager`, готов под reverse-proxy. | через systemd-юнит `systemd/v8-session-manager.service` |
+| `docker/v8project.yaml` | Контейнерный конфиг (см. `Dockerfile`, `docker-compose.yml`). | `docker compose up` |
+
+Системный установочный flow:
+
+```bash
+# 1. Сборка
+cargo build --release
+
+# 2. Установка бинаря и юнита
+sudo install -m 0755 target/release/v8-session-manager /usr/local/bin/
+sudo install -m 0644 systemd/v8-session-manager.service /etc/systemd/system/
+
+# 3. Создание системного пользователя и каталогов
+sudo useradd -r -s /usr/sbin/nologin -d /var/lib/v8-session-manager v8sm
+sudo install -d -o v8sm -g v8sm /var/lib/v8-session-manager
+sudo install -d -o root  -g v8sm -m 0750 /etc/v8-session-manager
+
+# 4. Установка конфига
+sudo install -m 0640 -o root -g v8sm \
+    etc/v8-session-manager/v8sm.yaml \
+    /etc/v8-session-manager/v8sm.yaml
+
+# 5. Запуск
+sudo systemctl daemon-reload
+sudo systemctl enable --now v8-session-manager
+sudo systemctl status v8-session-manager
+```
+
+Логи: `journalctl -u v8-session-manager -f`.
+
 ## Параметры запуска 1С-клиента (`/C`)
 
 Менеджер сам 1С не запускает; к нему подключаются 1С-клиенты, которые

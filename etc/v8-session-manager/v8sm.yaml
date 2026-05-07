@@ -1,0 +1,48 @@
+# Production-конфиг v8-session-manager.
+#
+# Используется systemd-юнитом systemd/v8-session-manager.service:
+#   ExecStart=/usr/local/bin/v8-session-manager --config /etc/v8-session-manager/v8sm.yaml
+#
+# Источник правды по ключам и дефолтам — src/config/model.rs.
+# Документация — README.md, секция «Конфиг (`v8project.yaml`)».
+#
+# Этот файл рассчитан на bare-metal или нативный запуск под systemd. Для
+# Docker используется docker/v8project.yaml (см. Dockerfile), для локальной
+# разработки — examples/local-dev.yaml или v8project.yaml в корне репо.
+
+# Рабочий каталог: логи, runtime-данные сессий, артефакты.
+# При установке через .deb/.rpm пакет следует выровнять с FHS:
+# /var/lib/v8-session-manager (создаётся пакетным скриптом, владелец v8sm:v8sm).
+workPath: /var/lib/v8-session-manager
+
+mcp:
+  # WS-транспорт для 1С-клиентов (mcpMode=ws в /C).
+  # В production по умолчанию слушаем только loopback — наружу выставляем
+  # через reverse-proxy (nginx/caddy) с TLS и аутентификацией.
+  session_manager:
+    bind_address: "127.0.0.1:4000"
+    path: "/sessions"
+    heartbeat_interval_ms: 15000
+    idle_timeout_secs: 1800
+    reconnection_grace_secs: 30
+    graceful_kill_grace_ms: 5000
+    ws_ping_interval_ms: 20000
+    ws_ping_timeout_ms: 30000
+
+  # MCP HTTP для AI-агентов (Claude Code и т.п.).
+  http:
+    bind_address: "127.0.0.1:4001"
+    path: "/mcp"
+    stateful_sessions: true
+    max_sessions: 64
+    idle_ttl_secs: 900
+    # auth_token: "your-bearer-token-here"   # раскомментировать для production
+
+  # Graceful shutdown.
+  execution:
+    shutdown_grace_period_secs: 30
+
+  # Prometheus /metrics. Пустая строка = отключено.
+  # Раскомментировать для production-мониторинга.
+  # metrics:
+  #   bind_address: "127.0.0.1:9100"
