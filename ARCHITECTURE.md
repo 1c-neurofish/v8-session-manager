@@ -1,168 +1,86 @@
-# Architecture
+# Архитектура
 
-> Contributor note: this file is the internal module and boundary map. For the user-facing operational guide, see `docs/DEEP_DIVE.md`.
+> Обзорный документ верхнего уровня по `v8-session-manager`. Полная схема стека (включая клиентскую часть `client_mcp` / addin) — в [`docs/architecture/STACK_OVERVIEW.md`](docs/architecture/STACK_OVERVIEW.md). Архитектурные решения — в [`docs/decisions/`](docs/decisions/README.md), инварианты — в [`docs/architecture/invariants.md`](docs/architecture/invariants.md).
 
-## Overview
+## Что это
 
-`v8-runner` is a Rust CLI for orchestrating local 1C platform operations. The current codebase is organized into eight main layers:
+`v8-session-manager` — однобинарный агрегатор клиентских MCP-сессий. Принимает входящие WebSocket-подключения от 1С-клиентов (через расширение `client_mcp` + транспортный addin) и одновременно отдаёт MCP HTTP (streamable) единым эндпоинтом для AI-агентов и IDE.
 
-Architecture decisions live in [docs/decisions](docs/decisions/README.md), and agent-facing invariants are summarized in [docs/architecture/invariants.md](docs/architecture/invariants.md).
+Менеджер сам 1С не запускает: lifecycle `1cv8c` лежит на стороне внешнего оркестратора (deploy-скрипт, IDE-плагин, BSL-расширение прикладной конфигурации). См. ADR-0034.
 
-1. `cli` parses arguments, maps them into transport-neutral requests, and owns command-level text/json rendering.
-2. `config` loads and validates YAML configuration.
-3. `domain` defines structured result types for commands plus shared execution step structs.
-4. `use_cases` owns transport-neutral requests, `ExecutionContext`, structured failures, and business orchestration.
-5. `mcp` now contains both the MCP-facing service boundary and the stdio/HTTP transport adapters: it maps raw tool inputs into use-case requests, returns MCP-specific DTOs plus structured business/internal failures, and publishes the live MCP tool servers.
-6. `platform` contains process execution, utility discovery, connection argument building, and low-level 1C adapters.
-7. `output` contains CLI presentation primitives such as `Presenter` and `Envelope`.
-8. `change_detection`, `parsers`, and `support` provide shared subsystems and utilities.
+## Компоненты
 
-## Current Platform Layer
+```
+                              v8-session-manager
+                       ┌────────────────────────────────┐
+   1С-клиенты (WS)  ──►│  WS transport :4000/sessions   │
+                       │            │                   │
+                       │            ▼                   │
+                       │   Arc<SessionRegistry>         │
+                       │            ▲                   │
+                       │            │                   │
+   AI-агенты (HTTP) ──►│  MCP HTTP transport :4001/mcp  │
+                       └────────────────────────────────┘
+                                    │
+                            per-session SessionDispatcher
+                            (FIFO очередь tool-вызовов)
+```
 
-The platform layer is intentionally split so responsibilities do not bleed into use cases:
+| Модуль | Источник | Ответственность |
+|--------|----------|------------------|
+| `src/session_manager/transport.rs` | WS-транспорт | axum + tokio-tungstenite на `:4000/sessions`. Принимает WS, ведёт reader/writer таски, шлёт RFC 6455 Ping для liveness, дёргает реестр на регистрацию/disconnect/reconnect. |
+| `src/session_manager/registry.rs` | `SessionRegistry` | In-memory реестр сессий: `client_uid` → `SessionRecord` (prefix, generation, tools, статус, `last_inbound_at`, `last_call_at`). Под `Arc`, шарится между транспортами. |
+| `src/session_manager/dispatcher.rs` | per-session FIFO | `SessionDispatcher` для каждой сессии: последовательная очередь tool-вызовов, inflight-счётчик, idle-bump (ADR-0021, ADR-0024). |
+| `src/session_manager/protocol.rs` | JSON-RPC 2.0 | Envelope + методы control-plane: `session.register`, `session.bye`, `tools/publish`, `tools/list_changed` (ADR-0023). |
+| `src/session_manager/lifecycle.rs` | sweepers | Idle-sweeper по `idle_timeout_secs`, grace-sweeper по `reconnection_grace_secs` для удаления отключённых записей. |
+| `src/session_manager/router.rs` | резолв префиксов | Маппинг `<prefix>__<tool>` ↔ `(session_id, tool_name)` при `tools/list` и `tools/call` (ADR-0025). |
+| `src/session_manager/notify.rs` | bidi notifications | `tools/list_changed` → подписчикам MCP HTTP (ADR-0026). |
+| `src/mcp/server.rs` | MCP-фасад | Реализация `rmcp` сервера: `initialize`, `tools/list` (агрегированный), `tools/call` (проксирование в нужную сессию), встроенный tool `session_list` (ADR-0034). |
+| `src/mcp/` (HTTP transport) | streamable HTTP | `axum` + `rmcp::transport::StreamableHttpService` на `:4001/mcp`, поддержка stateful-сессий, лимит `max_sessions`, idle TTL. |
+| `src/cli/args.rs` | CLI | Плоский `clap`-парсер: `--config`, `--workdir`, `--log-level`, `--bind`, `--path`, `--mcp-http`. Никаких подкоманд. |
+| `src/config/model.rs` | конфиг | `AppConfig` = `workPath` + `mcp: { session_manager, http, execution, metrics }`. |
 
-- `platform::process` defines `ProcessRunner`, `ProcessExecutor`, `ProcessRequest`, `ProcessResult`, and `SpawnResult`.
-- `platform::locator` resolves concrete executables (`1cv8`, `1cv8c`, `ibcmd`, `1cedtcli`) and caches results per `Locator` instance. Platform component discovery by version mask is governed by [ADR-0004](docs/decisions/0004-avtoobnaruzhivat-komponenty-platformy-1s-po-versii-maske.md).
-- `platform::connection` builds reusable V8 connection/auth arguments from the raw config connection string.
-- `platform::utilities` is the current facade used by use cases. It owns the stateful `Locator` and exposes the standard execution path.
-- `platform::designer` is the low-level batch DSL for `1cv8 DESIGNER`, returning `PlatformCommandResult` so `/Out` logs stay separate from runner-captured stdio.
-- `platform::ibcmd` is the low-level DSL for `ibcmd`, returning `PlatformCommandResult` with stdout/stderr diagnostics (no `/Out` log).
-- `platform::interactive` now contains the low-level `InteractiveProcessExecutor` for `1cedtcli`: it starts one child in its own process group, waits for the `1C:EDT>` prompt on stdout or stderr, executes prompt-delimited commands, kills/poisons the session on timeout, and supports graceful shutdown with forced-kill escalation.
-- `mcp::edt_session` now contains the Stage 3 shared EDT actor used by live MCP EDT syntax calls: it owns one lazy interactive session, enforces admission with the existing MCP execution limit, removes queued cancellations/timeouts from the internal FIFO, uses enqueue-time absolute deadlines, drains queued work on restart/shutdown, and keeps running cancellation cooperative.
-- `mcp::edt_syntax` now contains the MCP-specific `check_syntax_edt` executor over the shared actor: it renders interactive `validate` commands, applies the reset+probe baseline contract, reads `--file` logs, preserves `issues_found` when parseable issues coexist with interactive `stdout`, but still treats `stdout` without parseable issues and any non-empty `stderr` as `tool_failed`, and maps actor failures back into the existing syntax-result/use-case boundary.
-- `mcp::telemetry` now owns MCP runtime telemetry state and stable tracing contracts for semaphore admission wait, shared EDT queue depth, EDT startup failures, strict session restarts, and restart/shutdown drain stats.
+## Поток выполнения
 
-This boundary is designed so Wave 2 can add an EDT-specific interactive runner without replacing the locator API or the standard execution path.
+### Регистрация клиента
 
-## Command Boundary
+1. 1С-клиент стартует с `mcpMode=ws;manager_url=…` в `/C` → addin открывает WS на `:4000/sessions`.
+2. devkit BSL шлёт `session.register` (`client_uid`, `prefix`, `host_id`, `pid`, capabilities).
+3. `SessionRegistry::register_or_reattach` — либо новая запись, либо soft-reconnect по `client_uid` + `generation` (ADR-0022).
+4. Создаётся `SessionDispatcher`. `notify` рассылает MCP HTTP-клиентам `tools/list_changed`.
 
-The CLI/runtime boundary is now split explicitly:
+### Tool-вызов
 
-- `app.rs` owns bootstrap concerns only: config loading, logging setup, log cleanup, and top-level error envelopes for pre-command failures.
-- `app.rs` now also branches early for `mcp serve stdio` and `mcp serve http`, because those paths must bypass CLI presenters and run with MCP-specific bootstrap/logging behavior.
-- `cli::execute` converts `clap` args into transport-neutral request structs and renders command success/failure output.
-- `cli::execute` also owns the CLI workspace lock boundary for commands that use `workPath`; nested flows call explicit unlocked internals only while the outer command owns the lock.
-- `use_cases::{request,context,result}` define the transport-neutral contract that both CLI and future MCP adapters can consume.
-- `use_cases/*.rs` no longer depend on `clap`, `Presenter`, or `Envelope`.
+1. AI-агент → `POST /mcp` `tools/call` с именем `<prefix>__<tool>`.
+2. `router` резолвит prefix → session.
+3. Вызов кладётся в `SessionDispatcher` (FIFO + inflight).
+4. WS-фрейм → addin → devkit BSL → handler в прикладном расширении.
+5. Результат поднимается обратно по той же цепочке.
 
-This keeps current CLI behavior intact while reserving a stable internal API for MCP stdio/HTTP adapters.
-Workspace ownership is governed by [ADR-0011](docs/decisions/0011-eksklyuzivnoe-vladenie-workpath-na-vremya-komandy.md).
+### Liveness
 
-## Command Execution Policy
+WS protocol-level Ping/Pong (RFC 6455) с интервалом `ws_ping_interval_ms` и таймаутом `ws_ping_timeout_ms`. Реализация — в `transport.rs`, обрабатывается tokio worker'ом в addin без участия BSL (ADR-0024 §liveness, STACK_OVERVIEW).
 
-CLI and MCP commands must share the same timeout/cancellation semantics.
-The target contract is that every public command has a deadline, cancellation is routed through a transport-neutral execution context, and a cancelled/timed-out operation is reported only after the underlying operation reaches a terminal state.
-Mutating DB operations must mark critical phases where hard kill is not allowed by default.
-This policy is governed by [ADR-0014](docs/decisions/0014-edinaya-timeout-cancellation-policy-dlya-cli-i-mcp-komand.md).
+### Закрытие
 
-Runner-like and pipeline-like commands should be assembled in the use-case layer as transport-neutral pipelines of validation, target resolution, workspace preparation, platform execution, output parsing, publication, cleanup, and diagnostics blocks.
-Those blocks exchange typed context/input/output, leave step entries for skipped/degraded/failure behavior, and report domain execution through `ExecutionOutcome<T>`.
-This result grammar is governed by [ADR-0016](docs/decisions/0016-edinyy-executionoutcome-i-pipeline-steps-dlya-runner-like-stsenariev.md).
+- Корректное: `session.bye` от клиента → `remove_if_generation`.
+- Аварийное: idle-sweeper удаляет по `last_call_at + idle_timeout_secs` (ADR-0028 — фильтр по origin снят в ADR-0034).
+- Disconnect: `mark_disconnected_if_generation`, далее grace-sweeper.
 
-## Configuration Surface
+## Ключевые инварианты
 
-`v8project.yaml`, loaded into `AppConfig` and accepted by `config::validate`, is the main project configuration contract.
-`source-set.name` is a stable identity for runtime state, generated directories, diagnostics, and source-set selection.
-The supported `source-set[].type` contract and validation boundary are governed by [ADR-0017](docs/decisions/0017-v8project-yaml-source-set-kak-glavnyy-konfiguratsionnyy-kontrakt.md).
+См. [`docs/architecture/invariants.md`](docs/architecture/invariants.md). Кратко:
 
-The typed config model now splits MCP knobs into active HTTP/session settings and shared execution guardrails:
+- per-session FIFO (ADR-0021);
+- soft-reconnect по `client_uid` + monotonic `generation` (ADR-0022);
+- единственный публичный manager-tool — `session_list` (ADR-0034);
+- `tools/list` менеджера — агрегированный, имена клиентских тулов с префиксом `<prefix>__<tool>` (ADR-0025);
+- дедупликация tools по `(kind, name, schema_hash)` (ADR-0019);
+- bidirectional control-plane поверх одного WS (ADR-0023).
 
-- `mcp.http` defines the live HTTP listener and session behavior (`bind_address`, `path`, `stateful_sessions`, `max_sessions`, `idle_ttl_secs`).
-- `mcp.execution` defines shared admission/shutdown limits (`max_concurrent_calls`, `shutdown_grace_period_secs`) reused by both stdio and HTTP.
-- `tools.edt_cli` now also carries `startup_timeout_ms` and `command_timeout_ms`; the shared MCP EDT actor reuses these knobs for startup and bounded syntax execution.
+## Связанные документы
 
-This keeps the config surface stable while allowing both MCP transports to share the same execution/session infrastructure.
-
-## MCP Boundary
-
-The MCP adapter no longer needs to talk to `cli::execute` or to reuse domain serialization directly.
-
-- `mcp::request` defines raw tool-facing request DTOs.
-- `mcp::service::McpService` maps those requests into `use_cases::request::*` and attaches per-call MCP transport metadata.
-- `mcp::response` defines MCP-specific response DTOs, including nested step/test/issue structs that are decoupled from domain serialization details.
-- `mcp::error` splits failures into `McpBusinessFailure<T>` for structured tool responses and `McpInternalError` for adapter/runtime misuse that must not be surfaced as business payloads.
-- `mcp::tool_result` defines the structured transport payload returned by MCP tools for success vs business failure outcomes.
-- `mcp::server::McpToolServer` is the shared rmcp handler used by both transports. It exposes tools-only capabilities, maps incoming `camelCase` params into MCP DTOs, gates every tool call through a global semaphore, calls the synchronous `McpService` via `tokio::task::spawn_blocking` for non-EDT tools, and routes live `check_syntax_edt` through `mcp::edt_syntax` plus the shared `EdtSessionManager`.
-- `mcp::port` owns the MCP workspace lock boundary before dispatching requests into transport-neutral use cases; the global MCP semaphore remains an admission limit, not a replacement for per-`workPath` ownership.
-- MCP execution admission and HTTP session capacity are separate guardrails governed by [ADR-0013](docs/decisions/0013-mcp-execution-admission-timeout-cancellation-routing-i-http-session-capacity.md).
-- MCP runtime telemetry is intentionally implemented as structured `tracing` events rather than a separate metrics backend: semaphore acquisition emits `mcp_execution_semaphore_wait`, while the shared EDT actor emits `mcp_edt_queue_depth`, `mcp_edt_startup_failure`, `mcp_edt_session_restart`, and `mcp_edt_shutdown_drain`.
-- The stdio adapter still reserves `stdout` for MCP frames and enforces an absolute deadline for bounded EDT syntax calls: queue wait plus actor-side baseline/reset plus the interactive `validate` command all consume the same `tools.edt_cli.command_timeout_ms` budget.
-- The HTTP adapter is built on `axum` + `rmcp::transport::StreamableHttpService`. A thin wrapper around the rmcp service enforces transport-level overload semantics for new `initialize` requests (`503` when `max_sessions` is exhausted), translates stateful non-`initialize` POSTs without `Mcp-Session-Id` into deterministic `400`, and eagerly releases tracked capacity after `DELETE`.
-- HTTP session capacity is tracked via atomic reservation (`reserve -> delegate initialize -> confirm/release`) plus lazy pruning of expired rmcp sessions, so `max_sessions` remains correct across explicit close, TTL expiry, and failed initializes.
-- Client cancellation returns early for queued and running MCP requests. Detached one-shot work retains the server-side permit until completion, while live `check_syntax_edt` retains both the server-side permit and the shared actor's internal admission slot until the in-flight interactive command finishes.
-- MCP normalization is finalized in the service layer: dump-mode defaulting, launch alias mapping, `allExtensions` tri-state inference, and MCP-only pre-validation for syntax flag dependencies all live there instead of leaking into transport-neutral use cases.
-- The shared actor applies a deterministic baseline contract before each live EDT syntax command: `cd <workPath/edt-workspace>` followed by `cd`, which must echo the same workspace path. Request-budget exhaustion during this pre-dispatch phase stays `QueuedTimeout`; reset/probe faults force session restart and queue drain.
-
-Important staging note:
-
-- The shared actor is wired only into live MCP `check_syntax_edt`.
-- Current implementation gap: CLI EDT execution still creates direct non-shared interactive `1cedtcli` sessions when `tools.edt_cli.interactive_mode=true` for `init`, EDT export during `build`, and CLI `syntax edt`; target architecture is shared interactive EDT through a common actor/manager per ADR-0007.
-- `spec/MCP_IMPLEMENTATION_PLAN.md` remains the canonical staged MCP rollout history/reference for the closed Stage 1-5 MCP rollout; it is not the active backlog for follow-up EDT work.
-
-## Backend Dispatch
-
-`build` and `dump` use cases dispatch by `builder`:
-
-- `builder=DESIGNER` uses the existing `DesignerDsl`.
-- `builder=IBCMD` uses `IbcmdDsl` with `config import/apply` for build and `config export` for dump; for EDT build, the EDT export step still produces Designer-format files first.
-- Builder backends are expected to stay interchangeable for implemented builder scenarios. Functionality added for the Designer builder should also be available through the IBCMD builder, or the gap must be documented explicitly. Future Designer agent mode should be added behind the same use-case contract.
-- Server infobase support is a target contract for all tools; file-only behavior must be documented as a current gap rather than treated as the permanent architecture.
-
-Constraints to keep in mind:
-
-- Граница поддержки `IBCMD` как ограниченного backend формально закреплена в [ADR-0001](docs/decisions/0001-granitsy-podderzhki-ibcmd-kak-ogranichennogo-backend.md).
-- IBCMD currently requires file-based infobase connections; server infobase support is required by [ADR-0003](docs/decisions/0003-podderzhivat-servernye-ib-dlya-vseh-instrumentov.md) as a target contract for all tools.
-- `builder=DESIGNER` supports object-level partial dump via `/DumpConfigToFiles -partial -listFile`.
-- `builder=IBCMD` does not support object-scoped partial dump directly; `PARTIAL` degrades to
-  incremental export for the resolved target and returns a warning while preserving the requested
-  mode in the result payload.
-
-## Dump And Artifact Publication
-
-Full replacement outputs are published through a staging/backup contract governed by [ADR-0015](docs/decisions/0015-atomarnaya-publikatsiya-dump-artifacts-cherez-staging-backup.md).
-Full dump writes to a sibling staging directory before replacing the resolved target directory.
-Package artifacts write to a sibling staging file before replacing the output file, and external EPF/ERF publication stages the whole output directory before replacing it.
-Incremental and partial dump modes remain direct non-atomic update modes.
-
-## Output Flow
-
-Use cases now return transport-neutral payloads or structured failures.
-
-- `cli::execute` converts successful command payloads into `Envelope<T>` for JSON mode.
-- `cli::execute` preserves command-specific text formatting for build, test, dump, syntax, and launch.
-- Failure payload emission is also decided at the adapter boundary, which keeps `launch --output json` failure semantics unchanged while allowing other commands to keep structured JSON failures.
-- `mcp::service` returns MCP-specific DTOs and never reuses CLI `Envelope` or presenter logic.
-- Runner-like command payloads use `ExecutionOutcome<T>` as their domain source of truth for status, diagnostics, structured errors, metrics, artifacts, and typed parsed payload; top-level command structs may keep compatibility fields while adapters migrate.
-
-## Session Manager Layer
-
-`src/session_manager/` реализует управление 1С-клиентами как долгоживущими сессиями. Это самостоятельный слой поверх MCP — параллельный CLI-командам сборки/выгрузки. Архитектура зафиксирована в [ADR-0018..0032](docs/decisions/README.md):
-
-- `transport` — WebSocket-сервер (axum + tokio-tungstenite) для control- и data-plane по одному сокету. ADR-0018 (WS вместо HTTP back-connect).
-- `protocol` — JSON-RPC 2.0 envelope, методы `session.register`, `session.shutdown`, `addin.spawn`, `addin.kill`, `addin.child_exited`. Сообщения tool.call идут через тот же канал.
-- `registry` — `SessionRecord` со статусами `Spawning|Reserved|Active|Disconnected|Dead` и полем `origin: ManagerSpawned|SelfRegistered`. ADR-0028 (idle-sweeper фильтрует только ManagerSpawned).
-- `dispatcher` — per-session FIFO-очередь tool.call'ов. ADR-0021 (per-session FIFO как обязательный инвариант), ADR-0024 (dispatcher lifecycle).
-- `backend` — `SpawnBackend`/`KillBackend` traits с двумя реализациями: `LocalBackend` (tokio::process::Command + nix::signal) и `RemoteBackend` (WS JSON-RPC к sidecar-аддину). ADR-0031 (dual backend + kill matrix).
-- `routing` — `SpawnRouter`/`KillRouter` маршрутизирует по `host_id`: совпадает с менеджером → Local, иначе → Remote через sidecar в нужном host'е. ADR-0029 (host_id+pid+capabilities в register), ADR-0030 (inline launch-spec в session.spawn).
-- `lifecycle` — idle-sweeper, graceful shutdown, force-kill эскалация.
-- `notify` — двунаправленные notifications (server→client `tools/list_changed` и т.п.). ADR-0023, ADR-0026.
-
-Двухслойный API менеджера: `system_capability` (внутренний канал менеджер↔addin для addin.spawn/kill/child_exited, НЕ публикуется в MCP-каталоге) + `mcp_tools` (публичный MCP — `session.spawn/kill/list/swap`, `tool.*`, прокси клиентских tools). ADR-0027.
-
-Деплой: бинарь `~/.local/bin/v8-runner` нативно в основном devcontainer, бинд `0.0.0.0:4000` (WS) + `0.0.0.0:4001` (MCP HTTP). ADR-0032.
-
-Спецификация контракта — [spec/SESSION_MANAGER.md](spec/SESSION_MANAGER.md). Web-transport-addin (1С-сторона WS-канала) живёт в отдельном репо `web-transport-addin`.
-
-## Working Directories
-
-`workPath` is the root for runtime artifacts:
-
-- `workPath/logs/platform/` stores platform log files.
-- `workPath/temp/partial-lists/` stores partial load and partial dump list files.
-- `workPath/temp/yaxunit/` stores temporary YaXUnit config files.
-- `workPath/hash-storages/` remains reserved for change detection state.
-- `workPath/designer/<sourceSetName>/` is used by the EDT export/build flow as the generated Designer-format output area for a source-set.
-
-The `source-set` and `workPath` state boundary is formalized in [ADR-0002](docs/decisions/0002-izolirovat-runtime-state-po-source-set-pod-workpath.md): `DESIGNER` format uses one `designer-<sourceSetName>` change-detection context, while `EDT` format uses both `edt-<sourceSetName>` for export decisions and `designer-<sourceSetName>` for load decisions.
-Exclusive command ownership of `workPath` is governed by [ADR-0011](docs/decisions/0011-eksklyuzivnoe-vladenie-workpath-na-vremya-komandy.md).
-On-demand change detection and conservative file-level partial load rules are governed by [ADR-0012](docs/decisions/0012-on-demand-change-detection-i-faylovaya-partial-load-strategiya.md).
+- [`docs/architecture/STACK_OVERVIEW.md`](docs/architecture/STACK_OVERVIEW.md) — полная схема L0..L4.
+- [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — справочник по `v8project.yaml`.
+- [`docs/INSTALL.md`](docs/INSTALL.md) — установка как сервис на Linux/Windows/macOS.
+- [`docs/decisions/`](docs/decisions/README.md) — ADR-0018..0026, 0028, 0029, 0034, 0035.

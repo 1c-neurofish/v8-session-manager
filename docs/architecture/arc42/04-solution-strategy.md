@@ -1,21 +1,15 @@
 ## 4. Стратегия решения
 
-Архитектура следует слоистой модели оркестрации.
+Архитектура построена вокруг общего `Arc<SessionRegistry>`, который шарится между двумя транспортами.
 
 Ключевые решения и целевые контракты:
 
-- CLI и MCP остаются тонкими адаптерами над транспортно-нейтральными use case.
-- `v8project.yaml` и typed `AppConfig` являются главным конфигурационным контрактом; unsafe/unsupported combinations должны отклоняться на validation boundary.
-- Прямое взаимодействие с инструментами 1С инкапсулировано в выделенных платформенных адаптерах.
-- Анализ изменений используется для предпочтения инкрементальной работы вместо полного rebuild.
-- Структурированные типы результатов сохраняются до границы адаптера, а затем рендерятся отдельно для CLI и MCP.
-- MCP рассматривается не только как транспорт: он добавляет сессии, параллелизм, нормализацию, admission control и обработку транспортных ошибок.
-- Публичные команды над одним canonical `workPath` сериализуются через workspace lock; nested flows используют явные unlocked entrypoints только под внешним lock.
-- Timeout/cancellation являются общим CLI/MCP целевым контрактом и не должны возвращаться наружу до terminal state underlying operation.
-- Full replacement `dump` и `artifacts` публикуются через staging/backup, чтобы platform failure до publish сохранял старый target.
-- Runner-like сценарии используют общий execution grammar: pipeline vocabulary, step entries и `ExecutionOutcome<T>` как canonical domain outcome.
-- Общая интерактивная EDT-сессия переиспользуется только для живого пути MCP `check_syntax_edt`.
-- CLI EDT execution тоже умеет interactive-режим, но не использует MCP shared session manager и остаётся отдельным execution path.
-- Архитектура оптимизирована под agent-friendly contracts: use case возвращают transport-neutral DTO и структурированные failure payload, а логика представления остаётся на границе адаптера.
-
-Эта стратегия удерживает публичную поверхность стабильной и позволяет независимо развивать платформенное поведение и транспортные правила.
+- **Один бинарь, два транспорта.** WS для входящих 1С-клиентов и MCP HTTP для AI-агентов делят процесс, конфиг и реестр сессий. См. ADR-0018 (WS вместо HTTP back-connect).
+- **Bidirectional control plane поверх одного WS.** `client → manager` (`session.register`, `tools/publish`) и `manager → client` (`tools/list_changed` и т.п.) идут через тот же сокет; back-connect не используется. См. ADR-0023.
+- **Per-session FIFO как обязательный инвариант.** На каждую сессию — `SessionDispatcher` с последовательной очередью tool-вызовов. См. ADR-0021, ADR-0024.
+- **Soft-reconnect по `client_uid`.** Сессия живёт через краткие потери WS; `generation` защищает от гонок свежего коннекта и обработки старого `mark_disconnected`. См. ADR-0022.
+- **Минимальная MCP-поверхность.** Менеджер публикует только `session_list` плюс проксированные тулы клиентов. Никакого `session.spawn/kill/call/swap` (ADR-0034).
+- **Дедупликация тулов.** Одинаковые тулы от разных клиентов сводятся в один публичный по триплету `(kind, name, schema_hash)`; конфликты по схеме скрываются с предупреждением. См. ADR-0019.
+- **Liveness через WS Ping/Pong.** Не application-level: модальный диалог 1С — не «зависание». См. STACK_OVERVIEW §Liveness.
+- **Stateless по диску.** Менеджер не хранит persistent state; рестарт = чистый реестр, клиенты переподключаются заново.
+- **Transport-agnostic registry.** `SessionRegistry`, `SessionDispatcher`, `router` не знают о том, кто их вызывает (WS handler vs MCP HTTP tool dispatch); вся логика — над общим реестром.
