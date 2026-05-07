@@ -36,3 +36,12 @@ ai-artefacts/
 # Work artefacts (orchestrator/sub-agents)
 .context/
 tasks/
+
+# Docker / devcontainer — не поддерживаем как часть репо
+.devcontainer/
+docker/
+Dockerfile
+Dockerfile.*
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
