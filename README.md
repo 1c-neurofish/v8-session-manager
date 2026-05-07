@@ -143,7 +143,6 @@ curl -sS -X POST http://127.0.0.1:4001/mcp \
 | `v8project.yaml` | Дефолтный dev-конфиг репозитория. Загружается автоматически при `cargo run` без флагов. | `cargo run --release` |
 | `examples/local-dev.yaml` | Полный dev-конфиг (то, что раньше держали в `/tmp/v8sm.yaml`): bind на `0.0.0.0`, `/tmp/v8sm` для workPath, метрики выключены. | `./target/release/v8-session-manager --config examples/local-dev.yaml` |
 | `etc/v8-session-manager/v8sm.yaml` | Production-baseline для systemd-инсталляции на bare-metal: bind на loopback, workPath `/var/lib/v8-session-manager`, готов под reverse-proxy. | через systemd-юнит `systemd/v8-session-manager.service` |
-| `docker/v8project.yaml` | Контейнерный конфиг (см. `Dockerfile`, `docker-compose.yml`). | `docker compose up` |
 
 Системный установочный flow:
 
@@ -242,19 +241,6 @@ sudo systemctl status v8-session-manager
 | `--bind <HOST:PORT>` | Override WS bind поверх конфига. |
 | `--path <PATH>` | Override WS path. По умолчанию `/sessions`. |
 | `--mcp-http <HOST:PORT>` | Override MCP HTTP bind поверх конфига. |
-
-## Docker
-
-В репозитории есть `Dockerfile` и `docker-compose.yml`. Compose ожидает
-внешнюю сеть `infra` и пробрасывает порты `4000`/`4001`:
-
-```bash
-# при необходимости один раз создать сеть:
-# docker network create infra
-
-docker compose up -d
-docker compose logs -f v8-session-mgr
-```
 
 ## Документация
 
