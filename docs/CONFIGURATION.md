@@ -1,432 +1,122 @@
-> **Superseded by [ADR-0033](decisions/0033-extract-v8-session-manager-from-v8-runner.md).** Документ описывает CLI форка `v8-runner`, который вырезан из проекта. Актуальный пользовательский справочник по `v8-session-manager` — [`README.md`](../README.md). Текст ниже сохранён как исторический след.
-
 # Конфигурация
 
-Этот документ описывает все поддержанные ключи `v8project.yaml`, их текущий статус и ограничения реализации.
+Подробный справочник по `v8project.yaml` и CLI-флагам бинарника `v8-session-manager`.
 
-Цель документа:
+Источник правды:
 
-- дать единое место со всеми настройками;
-- отделить реально работающие настройки от задела на будущее;
-- явно ответить на вопросы про интерактивный EDT и дополнительные параметры запуска клиента 1С.
+- структура и дефолты — `src/config/model.rs`;
+- CLI-флаги — `src/cli/args.rs`;
+- production-baseline — `etc/v8-session-manager/v8sm.yaml`;
+- dev-baseline — `examples/local-dev.yaml` и `v8project.yaml` в корне репо.
 
-## Автонастройка
+## Минимальный конфиг
 
-Создать стартовый конфиг можно командой:
-
-```bash
-v8-runner config init
+```yaml
+workPath: /var/lib/v8-session-manager
 ```
 
-Команда работает без существующего `v8project.yaml`, создаёт файл в текущем каталоге и заполняет `source-set` найденными исходниками:
-
-- Designer-исходники находятся по файлу `Configuration.xml`;
-- расширения Designer распознаются по маркерам расширения внутри `Configuration.xml`;
-- EDT-проекты находятся по файлу `.project`;
-- существующий файл не перезаписывается без `--force`.
-
-После чтения конфига относительные `basePath`, `workPath`, пути Vanessa Automation и файловая строка подключения `File=...` / `/F ...` приводятся к абсолютным путям относительно каталога, где находится `v8project.yaml`. Серверная строка подключения должна сохраняться как строка подключения, а не трактоваться как путь.
-
-Полезные параметры:
-
-```bash
-v8-runner config init --connection "File=/path/to/ib"
-v8-runner --config custom.yaml config init
-v8-runner config init --file custom.yaml --force
-v8-runner config init --format edt
-```
+Этого достаточно: все секции `mcp.*` имеют дефолты. Менеджер поднимется на `127.0.0.1:4000/sessions` (WS) и `127.0.0.1:4001/mcp` (HTTP).
 
 ## Полный пример
 
 ```yaml
-basePath: /path/to/project
-workPath: build
-format: EDT
-builder: DESIGNER
-connection: "File=build/ib"
-
-credentials:
-  user: Admin
-  password: secret
-
-source-set:
-  - name: main
-    type: CONFIGURATION
-    path: main
-  - name: ext
-    type: EXTENSION
-    path: ext
-
-build:
-  partialLoadThreshold: 20
-
-tools:
-  platform:
-    path: /opt/1cv8/x86_64
-    version: 8.3.27.1859
-  enterprise:
-    additional-launch-keys:
-      - /TESTMANAGER
-  edt-cli:
-    path: 2025.2.3
-    version: 2025.2.3
-    interactive-mode: false
-    auto-start: false
-    startup-timeout-ms: 300000
-    command-timeout-ms: 300000
+workPath: /var/lib/v8-session-manager
 
 mcp:
+  session_manager:
+    bind_address: "127.0.0.1:4000"
+    path: "/sessions"
+    heartbeat_interval_ms: 15000
+    idle_timeout_secs: 1800
+    reconnection_grace_secs: 30
+    graceful_kill_grace_ms: 5000
+    ws_ping_interval_ms: 20000
+    ws_ping_timeout_ms: 30000
+
   http:
-    bind_address: 127.0.0.1:3000
-    path: /mcp
+    bind_address: "127.0.0.1:4001"
+    path: "/mcp"
     stateful_sessions: true
     max_sessions: 64
     idle_ttl_secs: 900
+    auth_token: null
+
   execution:
-    max_concurrent_calls: 1
     shutdown_grace_period_secs: 30
 
-tests:
-  execution_timeout_seconds: 300
-  yaxunit:
-    timeouts:
-      total_ms: 300000
-  va:
-    epf_path: /path/to/vanessa.epf
-    params_path: /path/to/va-params.json
-    profile: smoke
-    fail_fast: true
-    timeouts:
-      total_ms: 300000
-    profiles:
-      smoke:
-        feature_path: /path/to/features
+  metrics:
+    bind_address: "127.0.0.1:9100"
 ```
 
-## Обязательные ключи
+## Корневые ключи
 
-### `basePath`
+### `workPath` (обязателен)
 
-- Тип: путь
-- Обязателен: да
-- Значение: корень исходников проекта
+Рабочий каталог менеджера: лог-файлы, runtime-данные. Должен быть доступен на запись пользователю, под которым работает сервис. Создаётся заранее (для systemd-инсталляции — пакетным скриптом или вручную).
 
-Поведение:
+## Секция `mcp.session_manager`
 
-- должен существовать и быть каталогом.
+WS-транспорт для входящих подключений 1С-клиентов (`mcpMode=ws`).
 
-### `workPath`
+| Ключ | Тип | По умолчанию | Назначение |
+|------|-----|--------------|------------|
+| `bind_address` | `host:port` | `127.0.0.1:4000` | Bind WS-листенера. Для production обычно loopback за reverse-proxy. |
+| `path` | string | `/sessions` | URL path WS-эндпоинта. |
+| `heartbeat_interval_ms` | u64 | `15000` | Информационное значение, анонсируется в `session.register.result` (используется devkit'ом для собственного keepalive, не транспортом менеджера). |
+| `idle_timeout_secs` | u64 | `1800` | Idle-таймаут сессии: запись удаляется, если `last_call_at` старше этого окна (idle-sweeper). |
+| `reconnection_grace_secs` | u64 | `30` | Окно soft-reconnect: после disconnect запись помечается как `Disconnected` и удаляется не сразу, а через grace (даёт клиенту шанс переподключиться по тому же `client_uid`). |
+| `graceful_kill_grace_ms` | u64 | `5000` | Grace на корректное закрытие WS перед принудительным aborter'ом writer-таска. |
+| `ws_ping_interval_ms` | u64 | `20000` | Период WS protocol-level Ping (RFC 6455 opcode 0x9) от менеджера к клиенту. `0` — Ping отключён. Tokio-tungstenite в addin отвечает Pong автоматически без участия BSL. |
+| `ws_ping_timeout_ms` | u64 | `30000` | Таймаут отсутствия любых входящих фреймов (Pong / Text). По истечении соединение закрывается, сессия → `Disconnected`. Должен быть `>= ws_ping_interval_ms`. |
 
-- Тип: путь
-- Обязателен: да
-- Значение: рабочий каталог для временных файлов, логов, hash storage и EDT workspace
+> Важно: `ws_ping_*` — это liveness транспортного канала, а не application-level reachability BSL. Открытый модальный диалог 1С — легитимное состояние, при котором Pong продолжает приходить от tokio-worker'а addin'а. Менеджер намеренно не делает application-level ping. См. STACK_OVERVIEW §Liveness.
 
-Поведение:
+## Секция `mcp.http`
 
-- будет создан автоматически, если отсутствует;
-- используется как корень для:
-  - `workPath/hash-storages`
-  - `workPath/logs`
-  - `workPath/temp`
-  - `workPath/edt-workspace`
-  - `workPath/designer`
+MCP HTTP transport (streamable) для AI-агентов и IDE.
 
-### `connection`
+| Ключ | Тип | По умолчанию | Назначение |
+|------|-----|--------------|------------|
+| `bind_address` | `host:port` | `127.0.0.1:4001` | Bind HTTP-листенера. |
+| `path` | string | `/mcp` | URL path MCP-эндпоинта. |
+| `stateful_sessions` | bool | `true` | Включить stateful HTTP-сессии MCP (через `Mcp-Session-Id`). |
+| `max_sessions` | usize | `64` | Лимит одновременных stateful HTTP-сессий. При исчерпании новый `initialize` получает `503`. |
+| `idle_ttl_secs` | u64 | `900` | TTL stateful HTTP-сессии без активности. |
+| `auth_token` | string \| null | `null` | Bearer-токен для MCP HTTP. Если задан — каждый запрос обязан содержать `Authorization: Bearer <token>`. |
 
-- Тип: строка
-- Обязателен: да
+## Секция `mcp.execution`
 
-Поведение:
+Общие параметры исполнения MCP-вызовов. Сейчас менеджер длительных tool-вызовов сам не выполняет (только `session_list` + проксирование), поэтому остался единственный параметр.
 
-- передаётся в платформенные утилиты как строка подключения;
-- сейчас для `builder=IBCMD` должна указывать на файловую ИБ;
-- целевой контракт ADR-0003 требует поддержки серверных ИБ для всех инструментов, поэтому file-only ограничения считаются временными gaps.
-- Для `init` серверная строка подключения означает "использовать уже созданную серверную ИБ": шаг создания ИБ пропускается, а EDT workspace при `format=EDT` всё равно инициализируется.
+| Ключ | Тип | По умолчанию | Назначение |
+|------|-----|--------------|------------|
+| `shutdown_grace_period_secs` | u64 | `30` | Время на graceful shutdown tokio-runtime: дренируются inflight-вызовы и WS-сокеты, после чего процесс завершается. |
 
-### `source-set`
+## Секция `mcp.metrics`
 
-- Тип: список
-- Обязателен: да
+Prometheus exporter.
 
-Каждый элемент:
+| Ключ | Тип | По умолчанию | Назначение |
+|------|-----|--------------|------------|
+| `bind_address` | string \| null | `127.0.0.1:9100` | Bind для Prometheus `/metrics`. Пустая строка или `null` — exporter отключён. |
 
-- `name`: логическое имя набора исходников
-- `type`: `CONFIGURATION`, `EXTENSION`, `EXTERNAL_DATA_PROCESSORS` или `EXTERNAL_REPORTS`
-- `path`: путь к исходникам
+## CLI-флаги
 
-Поведение:
+Подкоманд нет, всё плоско (`src/cli/args.rs`):
 
-- должен быть хотя бы один `CONFIGURATION`;
-- `name` должен быть уникальным;
-- для `format=EDT` путь должен существовать;
-- для `format=EDT` generated Designer copy идёт в `workPath/designer/<name>`.
+| Флаг | Тип | Назначение |
+|------|-----|------------|
+| `--config <PATH>` | path | Путь к YAML-конфигу. Env: `V8SM_CONFIG`. По умолчанию `./v8project.yaml`. |
+| `--workdir <DIR>` | path | Переопределить рабочий каталог (используется для разрешения относительных путей и для логов). |
+| `--log-level <LEVEL>` | enum | `error`, `warn`, `info`, `debug`, `trace`. По умолчанию `info`. |
+| `--bind <HOST:PORT>` | string | Override `mcp.session_manager.bind_address`. |
+| `--path <PATH>` | string | Override `mcp.session_manager.path`. |
+| `--mcp-http <HOST:PORT>` | string | Override `mcp.http.bind_address`. |
 
-## Базовые режимы
+## Раскладка конфигов в репозитории
 
-### `format`
-
-- Тип: enum
-- Значения: `DESIGNER`, `EDT`
-- По умолчанию: `DESIGNER`
-
-### `builder`
-
-- Тип: enum
-- Значения: `DESIGNER`, `IBCMD`
-- По умолчанию: `DESIGNER`
-
-Ограничения:
-
-- `builder=IBCMD` сейчас требует файловую строку подключения и остаётся ограниченным backend для сценариев `init`, `build`, `dump`, `extensions`; server-based support является целевым требованием, а не новой отдельной веткой продукта.
-- Для `format=EDT` команда `build` сначала экспортирует EDT-проект в Designer-файлы под `workPath/designer/<name>`, затем загружает результат выбранным backend.
-
-## Опциональные секции
-
-### `credentials`
-
-- `credentials.user`
-- `credentials.password`
-
-Используются как логин/пароль для подключения к ИБ.
-
-### `build`
-
-- `build.partialLoadThreshold`
-- Тип: integer
-- По умолчанию: `20`
-- Минимум: `1`
-
-Используется для решения между partial и full load.
-
-### `tests`
-
-- `tests.execution_timeout_seconds`
-- Тип: integer
-- По умолчанию: `300`
-- Допустимый диапазон: `1..=86400`
-- `tests.yaxunit.timeouts.total_ms` и `tests.va.timeouts.total_ms`
-- Тип: integer
-- Используется как активный пользовательский таймаут для `test yaxunit` и `test va`
-- `startup_ms` и `run_ms` в `tests.*.timeouts` зарезервированы и не влияют на запуск
-- `tests.va.epf_path`, `tests.va.params_path`, `tests.va.profile`
-- Обязательны для Vanessa Automation
-- `tests.va.fail_fast`
-- Передаётся в runtime params как `stoponerror`
-- `tests.va.profiles.<name>.feature_path`
-- Обязателен для каждого профиля Vanessa
-- `tests.va.profiles.<name>.features_to_run`, `filter_tags`, `ignore_tags`, `scenario_filter`
-- Дополнительные фильтры VA, передаваемые в runtime params
-
-### `mcp.http`
-
-- `bind_address`: адрес HTTP listener, по умолчанию `127.0.0.1:3000`
-- `path`: HTTP path, по умолчанию `/mcp`
-- `stateful_sessions`: `true` по умолчанию
-- `max_sessions`: `64` по умолчанию
-- `idle_ttl_secs`: `900` по умолчанию
-
-### `mcp.execution`
-
-- `max_concurrent_calls`: по умолчанию `1`
-- `shutdown_grace_period_secs`: по умолчанию `30`
-
-## `tools.platform`
-
-### `tools.platform.path`
-
-- Тип: путь
-- Обязателен: нет
-
-Может указывать:
-
-- на конкретный бинарь `1cv8`, `1cv8c` или `ibcmd`;
-- на каталог `bin`;
-- на корень установки с версиями.
-
-### `tools.platform.version`
-
-- Тип: строка
-- Обязателен: нет
-- Формат: `major.minor`, `major.minor.patch` или `major.minor.patch.build`
-
-Пример:
-
-```yaml
-tools:
-  platform:
-    version: 8.3
-```
-
-По [ADR-0004](decisions/0004-avtoobnaruzhivat-komponenty-platformy-1s-po-versii-maske.md) `v8-runner` должен сам искать установленные компоненты платформы 1С по версии или версии-маске:
-
-- `8.3.27.1789`: точное совпадение;
-- `8.3.20`: выбрать максимальную найденную сборку `8.3.20.*`;
-- `8.3`: выбрать максимальную найденную версию `8.3.*.*`.
-
-Если указаны четыре части, например `8.3.27.1859`, автопоиск требует точное совпадение.
-Если `path` не указан, будет идти автопоиск по стандартным корням установки.
-
-## `tools.edt_cli`
-
-### `tools.edt_cli.path`
-
-- Тип: путь или version-like hint
-- Обязателен: нет
-
-Поддержанные варианты:
-
-- абсолютный путь к `1cedtcli`;
-- путь к каталогу установки EDT;
-- version-like hint, например `2025.2.3`.
-
-Пример:
-
-```yaml
-tools:
-  edt-cli:
-    path: 2025.2.3
-```
-
-Это находит установленный EDT вида `1c-edt-2025.2.3+30-x86_64`.
-
-### `tools.edt_cli.version`
-
-- Тип: строка
-- Обязателен: нет
-
-Отдельная version-like подсказка для автопоиска EDT.
-
-Пример:
-
-```yaml
-tools:
-  edt-cli:
-    version: 2025.2.3
-```
-
-### `tools.edt_cli.startup_timeout_ms`
-
-- Тип: integer
-- По умолчанию: `300000`
-- Также принимает: `startup-timeout-ms`
-
-Используется при старте интерактивной EDT session и ожидании prompt.
-
-### `tools.edt_cli.command_timeout_ms`
-
-- Тип: integer
-- По умолчанию: `300000`
-- Также принимает: `command-timeout-ms`
-
-Используется как timeout для интерактивных EDT-команд.
-
-### `tools.edt_cli.interactive_mode`
-
-- Тип: boolean
-- По умолчанию: `false`
-- Также принимает: `interactive-mode`
-
-Если включён:
-
-- все EDT-операции (`init`, EDT export в `build`, `syntax edt`, MCP `check_syntax_edt`) идут через long-lived interactive `1cedtcli`;
-- shared MCP EDT session тоже работает в interactive-режиме;
-- `auto-start` начинает реально влиять на shared MCP EDT session.
-
-Если выключен:
-
-- все EDT-операции идут через обычные one-shot вызовы `1cedtcli -command ...`;
-- `auto-start` игнорируется.
-
-### `tools.edt_cli.auto-start`
-
-- Тип: boolean
-- По умолчанию: `false`
-
-Работает только вместе с `tools.edt_cli.interactive_mode=true`.
-
-Поведение:
-
-- для shared MCP EDT session выполняет eager prewarm на старте сервера;
-- при `interactive_mode=false` не оказывает эффекта.
-
-### `tools.edt_cli.working-directory`
-
-Текущий статус:
-
-- не поддержан моделью конфигурации;
-- будет проигнорирован как неизвестный ключ YAML;
-- рабочий каталог EDT session сейчас фиксирован: `workPath/edt-workspace`.
-
-## Интерактивный EDT: что реально работает
-
-Реально поддержано:
-
-- автопоиск `1cedtcli`;
-- отдельное переключение через `tools.edt_cli.interactive_mode`;
-- интерактивный backend для всех EDT-операций;
-- ленивый старт shared MCP session;
-- eager prewarm через `auto-start`, если включён interactive-mode;
-- timeout старта через `tools.edt_cli.startup_timeout_ms`;
-- timeout команды через `tools.edt_cli.command_timeout_ms`;
-- workspace в `workPath/edt-workspace`.
-
-Пока не поддержано как отдельная настраиваемая функция:
-
-- произвольный `working-directory`;
-- дополнительные аргументы для старта `1cedtcli` сверх `-data <workPath/edt-workspace>`.
-
-## Запуск клиента 1С: что реально поддержано
-
-Команда `launch` поддерживает выбор режима позиционным аргументом:
-
-- `designer`
-- `thin`
-- `thick`
-- `ordinary`
-
-Старый вариант `--mode <designer|thin|thick|ordinary>` сохранён для совместимости.
-
-Внутри формируется запуск:
-
-- `designer` -> `1cv8 DESIGNER`
-- `thin` -> `1cv8c ENTERPRISE`
-- `thick` -> `1cv8 ENTERPRISE`
-
-Дополнительно автоматически передаются только:
-
-- аргументы из `connection`;
-- `credentials.user/password`, если они заданы.
-
-### Дополнительные параметры клиента 1С
-
-Поддержано:
-
-- `tools.enterprise.additional-launch-keys` как список строк;
-- ключи дописываются только к `thin`/`thick` запуску клиента (`ENTERPRISE`);
-- `designer`-запуск эти ключи не получает;
-- MCP `launch_app` использует те же настройки, потому что опирается на тот же use case.
-
-Пример:
-
-```yaml
-tools:
-  enterprise:
-    additional-launch-keys:
-      - /TESTMANAGER
-      - /RunModeOrdinaryApplication
-```
-
-Если нужен запуск с чем-то вроде:
-
-- `/RunModeOrdinaryApplication`
-- `/UsePrivilegedMode`
-- `/C <payload>`
-- `/Execute <epf>`
-- `/DisableStartupDialogs`
-
-то это сейчас потребует доработки use case и конфигурационной модели.
-
-## Что стоит помнить
-
-- `docs/CAPABILITIES.md` описывает пользовательские возможности и матрицу сценариев.
-- Этот файл описывает именно конфигурацию и её текущие runtime-ограничения.
+| Файл | Назначение | Запуск |
+|------|------------|--------|
+| `v8project.yaml` | Дефолтный dev-конфиг, подхватывается `cargo run` без флагов. | `cargo run --release` |
+| `examples/local-dev.yaml` | Расширенный dev-конфиг: bind на `0.0.0.0`, метрики выключены. | `./target/release/v8-session-manager --config examples/local-dev.yaml` |
+| `etc/v8-session-manager/v8sm.yaml` | Production-baseline для systemd. | через `systemd/v8-session-manager.service` (см. [INSTALL.md](INSTALL.md)) |

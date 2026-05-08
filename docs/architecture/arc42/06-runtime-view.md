@@ -1,128 +1,85 @@
 ## 6. Представление времени выполнения
 
-### 6.1 Сценарий `build`
+### 6.1 Регистрация клиента
 
 ```mermaid
 sequenceDiagram
-    participant User as Вызывающая сторона CLI или MCP
-    participant Adapter as Адаптер CLI/MCP
-    participant UC as Use case сборки
-    participant CD as Анализ изменений
-    participant PF as Платформенный адаптер
-    participant IB as Информационная база 1С
+    participant Client as 1С-клиент<br/>(addin + devkit BSL)
+    participant WS as transport.rs (WS :4000)
+    participant Reg as SessionRegistry
+    participant Disp as SessionDispatcher
+    participant Notify as notify.rs
 
-    User->>Adapter: запрос build
-    Adapter->>UC: нормализованный запрос
-    UC->>CD: определить изменённые source-set
-    CD-->>UC: изменённые файлы и подсказки по режиму
-    alt Изменений нет
-        UC-->>Adapter: skipped/success результат
-    else Найдены изменения
-        UC->>PF: выполнить загрузку через Designer или IBCMD
-        PF->>IB: import/apply изменений
-        IB-->>PF: результат платформы
-        PF-->>UC: структурированный итог исполнения
-        UC-->>Adapter: результат build
+    Client->>WS: WS handshake /sessions
+    WS->>Reg: на коннект — пустая запись Reserved
+    Client->>WS: session.register {client_uid, prefix, host_id, pid, tools}
+    WS->>Reg: register_or_reattach(client_uid, generation, prefix, tools)
+    alt Новый client_uid
+        Reg-->>WS: created (Active)
+        Reg->>Disp: spawn dispatcher
+    else Тот же client_uid в reconnection_grace
+        Reg-->>WS: reattached (Active, generation+=1)
+    end
+    WS-->>Client: session.register.result
+    Reg->>Notify: tools changed
+    Notify-->>"MCP HTTP-клиенты": tools/list_changed
+```
+
+### 6.2 Tool-вызов
+
+```mermaid
+sequenceDiagram
+    participant Agent as AI-агент
+    participant Http as MCP HTTP (:4001)
+    participant Reg as SessionRegistry
+    participant Disp as SessionDispatcher
+    participant WS as WS transport
+    participant Client as 1С-клиент
+
+    Agent->>Http: tools/call <prefix>__<tool>
+    Http->>Reg: lookup prefix → session_id
+    Http->>Disp: enqueue(call)
+    Disp->>WS: tools/call (когда сессия свободна)
+    WS->>Client: WS frame
+    Client-->>WS: tools/result
+    WS-->>Disp: deliver result + bump last_call_at
+    Disp-->>Http: result
+    Http-->>Agent: MCP response
+```
+
+Ключевые свойства:
+
+- очередь — на сессию, а не глобальная: разные сессии исполняют параллельно;
+- порядок tool-вызовов в одной сессии сохраняется (ADR-0021);
+- ошибки транспорта (WS rotting / disconnect в момент вызова) маршрутизируются в MCP-ошибку с пометкой о soft-reconnect окне.
+
+### 6.3 Liveness и soft-reconnect
+
+```mermaid
+sequenceDiagram
+    participant Mgr as transport.rs (writer)
+    participant Client as addin (tokio worker)
+    participant Reg as SessionRegistry
+    participant LC as lifecycle.rs
+
+    loop каждые ws_ping_interval_ms
+        Mgr->>Client: WS Ping (RFC 6455)
+        Client-->>Mgr: WS Pong (автоматически, без BSL)
+        Mgr->>Reg: bump last_inbound_at
+    end
+    Note over Mgr,Client: Pong не пришёл за ws_ping_timeout_ms
+    Mgr->>Reg: mark_disconnected_if_generation
+    Reg->>LC: запись Disconnected, grace=reconnection_grace_secs
+    alt Клиент успел переподключиться
+        Client->>Mgr: новый WS + session.register (тот же client_uid)
+        Mgr->>Reg: register_or_reattach → Active, generation+=1
+    else Grace истёк
+        LC->>Reg: remove_if_generation
     end
 ```
 
-Ключевые свойства выполнения:
+### 6.4 Закрытие
 
-- Public CLI/MCP boundary должен владеть workspace lock для canonical `workPath` до dispatch use case.
-- `CONFIGURATION` обрабатывается раньше расширений.
-- Выбор между partial и full строится по анализу изменений и возможностям backend.
-- Состояние сохраняется только после успешного выполнения.
-- Для EDT source-set export decision и generated Designer load decision используют разные change-detection contexts.
-
-### 6.2 Сценарий `test`
-
-- `test` всегда начинается с `build`.
-- Внешний command boundary владеет workspace lock, а вложенный `build` вызывается через explicit unlocked entrypoint.
-- Если сборка завершилась ошибкой, тесты не запускаются.
-- Генерируется временный JSON-конфиг YaXUnit.
-- Затем запускается Enterprise, а JUnit XML и runner-log разбираются в структурированные результаты.
-- При сбое выполнения или разбора артефакты не уничтожаются молча: они сохраняются под `workPath/temp/yaxunit/runs/<run-id>/`.
-- Итог тестового runner-like сценария должен выражаться через `ExecutionOutcome<TestReport>` и сохранять structured errors, diagnostics, metrics and retained artifacts.
-
-### 6.3 Сценарий `extensions`
-
-```mermaid
-sequenceDiagram
-    participant User as CLI пользователь
-    participant CLI as cli::execute
-    participant UC as configure_extensions
-    participant PF as Platform adapter
-    participant IB as Информационная база
-
-    User->>CLI: extensions [--name ...]
-    CLI->>UC: ConfigureExtensionsRequest
-    UC->>UC: выбрать extension source-set
-    UC->>PF: обновить свойства расширений
-    PF->>IB: extension update
-    IB-->>PF: результат платформы
-    PF-->>UC: шаги и диагностика
-    UC-->>CLI: ExtensionsResult
-```
-
-Ключевые свойства выполнения:
-
-- Сценарий остаётся CLI-only и не публикуется как MCP tool.
-- Работает только с `source-set` типа `EXTENSION`.
-- Используется как более узкий operational path по сравнению с `build`, когда нужно синхронизировать свойства расширений без полной загрузки исходников.
-- Так как операция мутирует ИБ, будущая общая execution policy должна помечать соответствующий platform step как critical DB phase.
-
-### 6.4 Сценарий MCP EDT Syntax
-
-- MCP-запрос приходит через stdio или HTTP.
-- Глобальный admission control ограничивает параллельные tool-вызовы.
-- `check_syntax_edt` идёт через общий менеджер EDT-сессии вместо one-shot исполнения.
-- Ожидание в очереди, baseline reset/probe и выполнение команды используют один и тот же ограниченный бюджет таймаута.
-- Отмена запроса может завершить клиентский путь раньше, чем фактическая серверная работа будет полностью дренирована.
-- Целевая семантика по ADR-0014 требует не возвращать cancelled/timed out наружу до terminal state underlying operation; текущие detached/early-return механизмы считаются transition gaps.
-
-### 6.5 Full Replacement `dump` / `artifacts` Publication
-
-```mermaid
-sequenceDiagram
-    participant User as CLI пользователь
-    participant UC as Use case dump/artifacts
-    participant PF as Platform adapter
-    participant Stage as Sibling staging path
-    participant Target as User target path
-    participant Backup as Sibling backup path
-
-    User->>UC: dump/artifacts request
-    UC->>Stage: подготовить staging рядом с target
-    UC->>PF: записать результат в staging
-    PF-->>UC: platform result
-    alt platform failed
-        UC-->>User: failure, старый target не изменён
-    else platform succeeded
-        UC->>Target: re-canonicalize target
-        UC->>Backup: move existing target to backup
-        UC->>Target: move staging to target
-        alt publish failed
-            UC->>Target: rollback backup -> target
-            UC-->>User: failure with rollback context
-        else publish succeeded
-            UC->>Backup: best-effort cleanup
-            UC-->>User: success or degraded cleanup warning
-        end
-    end
-```
-
-Ключевые свойства выполнения:
-
-- Staging и backup находятся рядом с target, чтобы не переходить границу файловой системы при rename.
-- Orphan cleanup может удалять только stale staging/backup paths с metadata `tool=v8-runner` и matching target identity.
-- `dump incremental` и `dump partial` не получают full replacement guarantee и остаются non-atomic update modes.
-- Publication phase после переноса старого target в backup является filesystem critical phase.
-
-### 6.6 Command Boundary, Admission и Cancellation
-
-- CLI и MCP используют разные public surfaces, но сходятся в transport-neutral use case boundary.
-- MCP tool call сначала проходит execution admission; HTTP session capacity проверяется отдельно на transport lifecycle.
-- После admission команда, работающая с `workPath`, должна получить workspace lock до запуска use case.
-- Timeout budget должен покрывать очередь/admission, подготовку, platform work, сбор логов, cleanup и mapping результата.
-- Nested orchestration наследует оставшийся deadline outer command.
-- Mutating DB operations после входа в critical phase не должны получать default hard kill; cancellation/timeout записывается как requested и команда ждёт terminal outcome.
+- Корректное: клиент шлёт `session.bye` → `Reg::remove_if_generation`. Diff попадает в `tools/list_changed`.
+- Idle: `lifecycle.rs::idle_sweeper` периодически удаляет записи с `last_call_at + idle_timeout_secs < now`. После ADR-0034 фильтр по `origin` не применяется.
+- Graceful shutdown: SIGTERM → `app.rs` ставит CancellationToken, оба транспорта дренируют inflight-вызовы в пределах `mcp.execution.shutdown_grace_period_secs`.

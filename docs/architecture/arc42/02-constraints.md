@@ -2,24 +2,16 @@
 
 ### 2.1 Технические ограничения
 
-- Кодовая база реализована на Rust 2021.
-- Ключевые интеграции зависят от локально доступных утилит 1С: `1cv8`, `1cv8c`, `ibcmd` и `1cedtcli`.
-- Компоненты платформы 1С должны разрешаться через общий locator/facade по `tools.platform.version` или версии-маске, а не через ad hoc поиск в use case.
-- `v8project.yaml`, загруженный в `AppConfig` и прошедший `config::validate`, является главным конфигурационным контрактом.
-- Публичный ключ типа source-set — `source-set[].type`; поддержанные значения: `CONFIGURATION`, `EXTENSION`, `EXTERNAL_DATA_PROCESSORS`, `EXTERNAL_REPORTS`. Legacy `purpose` не является публичным контрактом.
-- `builder=IBCMD` сейчас требует файловое подключение к информационной базе; это текущий gap, а не целевая архитектурная норма.
-- Все инструменты должны проектироваться с целевой поддержкой серверных информационных баз, если соответствующая операция платформы 1С принципиально поддерживает серверное подключение.
-- MCP реализован на `rmcp`, `tokio` и `axum`.
-- Состояние отслеживания изменений хранится в `workPath/hash-storages/*.redb`.
-- `workPath` является owned runtime root; публичные CLI/MCP команды, которые читают или пишут runtime state под ним, должны владеть workspace lock.
-- MCP execution admission и HTTP session capacity являются разными лимитами и не заменяют workspace lock.
-- Публичная поверхность MCP намеренно уже, чем CLI: например, `init` и `extensions` не публикуются как MCP tools.
-- Full replacement `dump` и `artifacts` должны публиковаться через staging/backup рядом с target; incremental/partial dump остаются non-atomic update modes.
-- Единая timeout/cancellation policy для CLI и MCP является целевым контрактом. Текущие implementation gaps фиксируются в ADR-0014 и не должны становиться новой нормой.
+- Кодовая база реализована на Rust 2021 (`tokio`, `axum`, `rmcp`, `tokio-tungstenite`).
+- Один бинарь, два транспорта: WS (`:4000/sessions` по умолчанию) и MCP HTTP (`:4001/mcp` по умолчанию). Оба транспорта работают на общем `Arc<SessionRegistry>`.
+- Конфигурация — единственный YAML-файл (`v8project.yaml` или путь из `--config` / `V8SM_CONFIG`). Никаких `base_path` / `connection` / `source-set` / `tools.platform` / `tools.edt-cli` / `tests` — это были поля исторического CLI `v8-runner`, удалены при extraction (ADR-0033).
+- Менеджер сам 1С не запускает: `tokio::process::Command`, RAC-интеграция, sidecar-аддин для spawn — нет (ADR-0034).
+- Liveness канала держится на WS protocol-level Ping/Pong (RFC 6455). Application-level ping намеренно не делается, чтобы открытый модальный диалог 1С не считался зависанием (см. STACK_OVERVIEW §Liveness).
+- Состояние сессий — in-memory. Менеджер stateless по диску: рестарт уничтожает реестр, клиенты переподключаются заново.
+- MCP HTTP — streamable transport через `rmcp::transport::StreamableHttpService`; stateful-сессии трекаются по `Mcp-Session-Id`.
 
 ### 2.2 Организационные и продуктовые ограничения
 
-- Инструмент ориентирован на локальное использование и предполагает рабочую станцию разработчика.
-- Публичное поведение должно соответствовать текущим контрактам CLI и MCP, а не старым внутренним заметкам.
-- Ответы MCP должны оставаться структурированными и пригодными для автоматизации.
-- В проекте уже разведены пользовательские эксплуатационные документы и внутренняя архитектурная документация для контрибьюторов.
+- Публичная поверхность менеджера на MCP HTTP — единственный встроенный tool `session_list` плюс проксированные тулы клиентов (ADR-0034). Расширение этой поверхности требует нового ADR, явно отменяющего ADR-0034.
+- Lifecycle 1С-клиентов лежит на внешнем оркестраторе. Любые «manager-side spawn templates», «kill matrix», «session swap» — это исторические наработки (ADR-0030, ADR-0031), помеченные как `superseded by ADR-0034`.
+- Все изменения архитектурных границ оформляются как новый ADR в `docs/decisions/`, а связанные документы (`README.md`, `docs/CONFIGURATION.md`, `docs/architecture/`) синхронизируются в том же изменении.

@@ -144,33 +144,21 @@ curl -sS -X POST http://127.0.0.1:4001/mcp \
 | `examples/local-dev.yaml` | Полный dev-конфиг (то, что раньше держали в `/tmp/v8sm.yaml`): bind на `0.0.0.0`, `/tmp/v8sm` для workPath, метрики выключены. | `./target/release/v8-session-manager --config examples/local-dev.yaml` |
 | `etc/v8-session-manager/v8sm.yaml` | Production-baseline для systemd-инсталляции на bare-metal: bind на loopback, workPath `/var/lib/v8-session-manager`, готов под reverse-proxy. | через systemd-юнит `systemd/v8-session-manager.service` |
 
-Системный установочный flow:
+Подробная инструкция установки как сервис (systemd / Windows Service / launchd) — в [`docs/INSTALL.md`](docs/INSTALL.md). Для Linux + systemd кратко:
 
 ```bash
-# 1. Сборка
 cargo build --release
-
-# 2. Установка бинаря и юнита
 sudo install -m 0755 target/release/v8-session-manager /usr/local/bin/
 sudo install -m 0644 systemd/v8-session-manager.service /etc/systemd/system/
-
-# 3. Создание системного пользователя и каталогов
 sudo useradd -r -s /usr/sbin/nologin -d /var/lib/v8-session-manager v8sm
 sudo install -d -o v8sm -g v8sm /var/lib/v8-session-manager
 sudo install -d -o root  -g v8sm -m 0750 /etc/v8-session-manager
-
-# 4. Установка конфига
 sudo install -m 0640 -o root -g v8sm \
-    etc/v8-session-manager/v8sm.yaml \
-    /etc/v8-session-manager/v8sm.yaml
-
-# 5. Запуск
+    etc/v8-session-manager/v8sm.yaml /etc/v8-session-manager/v8sm.yaml
 sudo systemctl daemon-reload
 sudo systemctl enable --now v8-session-manager
-sudo systemctl status v8-session-manager
+journalctl -u v8-session-manager -f
 ```
-
-Логи: `journalctl -u v8-session-manager -f`.
 
 ## Параметры запуска 1С-клиента (`/C`)
 
@@ -244,24 +232,28 @@ sudo systemctl status v8-session-manager
 
 ## Документация
 
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — обзорный документ верхнего уровня:
+  компоненты, потоки, ключевые инварианты.
 - [`docs/architecture/STACK_OVERVIEW.md`](docs/architecture/STACK_OVERVIEW.md) —
-  полная архитектурная схема стека: транспортное ядро (Rust addin) →
-  devkit BSL (`onec-client-mcp-devkit`) → прикладные расширения
-  (`test_client`, `VAExtension`, YaxUnit-runner) → менеджер → AI-агент.
-  Mermaid-диаграмма + lifecycle сессии + таблица ответственностей слоёв.
-- `docs/decisions/` — архитектурные решения (ADR). Релевантные для
-  текущего менеджера: ADR-0018 (WS-туннель), ADR-0019 (дедупликация
-  тулов), ADR-0020 (`SessionLaunchParamsCarrier`), ADR-0021 (per-session
-  FIFO), ADR-0022 (soft-reconnect), ADR-0023 (bidirectional control
-  plane), ADR-0024 (per-session dispatcher), ADR-0025 (публикация и
-  резолвинг имён тулов), ADR-0026 (`tools/list_changed`), ADR-0028
-  (session origin tracking), ADR-0029 (host_id/pid в register payload),
-  ADR-0030 (inline launch spec).
-- `docs/architecture/arc42/` — описание архитектуры в формате arc42.
-- `ARCHITECTURE.md` — обзорный документ верхнего уровня.
+  полная схема стека: транспортный addin (Rust) → devkit BSL
+  (`onec-client-mcp-devkit`) → прикладные расширения (`test_client`,
+  `VAExtension`, YaxUnit-runner) → менеджер → AI-агент. Mermaid-диаграмма +
+  lifecycle сессии + таблица ответственностей слоёв.
+- [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — справочник по
+  `v8project.yaml` и CLI-флагам.
+- [`docs/INSTALL.md`](docs/INSTALL.md) — установка как сервис на
+  Linux (systemd), Windows (NSSM / sc.exe) и macOS (launchd).
+- [`docs/architecture/invariants.md`](docs/architecture/invariants.md) —
+  обязательные архитектурные инварианты.
+- [`docs/architecture/arc42/`](docs/architecture/arc42/architecture.md) —
+  описание в формате arc42.
+- [`docs/decisions/README.md`](docs/decisions/README.md) — каталог ADR.
+  Актуальные решения для текущего менеджера: ADR-0018, 0019, 0020, 0021,
+  0022, 0023, 0024, 0025, 0026, 0028, 0029, 0032, 0033, 0034, 0035.
+  ADR-0030/0031 — `superseded by ADR-0034`.
 
-> ADR-0001..0017 и ADR-0027 относились к историческому v8-runner CLI и
-> были удалены после extraction (см. ADR-0033). Если нужна их история —
+> ADR-0001..0017 и ADR-0027 относились к историческому `v8-runner` CLI
+> (extraction зафиксирован ADR-0033) и удалены. Если нужна их история —
 > она доступна в исходном репозитории `v8-runner` либо в git-логе до
 > коммита `chore: drop v8-runner ADRs`.
 

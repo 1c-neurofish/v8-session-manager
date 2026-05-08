@@ -1,152 +1,93 @@
-> **Superseded by [ADR-0033](../decisions/0033-extract-v8-session-manager-from-v8-runner.md).** Документ написан под CLI форка `v8-runner`. Часть инвариантов про session-manager (ADR-0018..0034) остаётся актуальной; пункты про CLI/build/source-set — нет. Актуальный обзор — [`README.md`](../../README.md) и [`docs/decisions/README.md`](../decisions/README.md).
-
 # Архитектурные инварианты
 
-Этот документ фиксирует правила, которые должны оставаться верными при развитии `v8-runner`.
-Если изменение нарушает инвариант, сначала нужен новый ADR, который явно заменяет или уточняет текущее решение.
+Правила, которые должны оставаться верными при развитии `v8-session-manager`. Если изменение нарушает инвариант — нужен новый ADR, явно заменяющий или уточняющий текущее решение.
 
-## Цель продукта
+## Цель и публичная поверхность
 
-1. Главная цель `v8-runner` — предоставить простой и удобный интерфейс для сборки и проверки исходников 1С-решения человеком и AI-агентом.
-2. Основной пользовательский цикл — `build -> syntax/test -> diagnose`.
-3. Новая функциональность должна упрощать этот цикл или явно объяснять, какую диагностическую, эксплуатационную или интеграционную задачу она закрывает.
-4. Низкоуровневые детали утилит 1С не должны становиться обязательным знанием для обычного пользователя или AI-агента, если их можно скрыть за стабильным CLI/MCP контрактом.
-5. Удобство для человека и пригодность для AI-агента являются равноправными критериями продукта.
+1. Менеджер — агрегатор клиентских MCP-сессий: WS-транспорт для 1С-клиентов и MCP HTTP для AI-агентов в одном бинарнике.
+2. Менеджер не запускает 1С-процессы. Lifecycle `1cv8c` лежит на стороне внешнего оркестратора. См. ADR-0034.
+3. Публичная MCP-поверхность менеджера — единственный встроенный tool `session_list` плюс проксированные тулы клиентов с префиксом `<prefix>__<tool>`. Любые `session.spawn/kill/call/swap` менеджерскими тулами запрещены (ADR-0034).
 
-## Публичные поверхности
+## Per-session FIFO
 
-1. CLI и MCP являются разными публичными поверхностями.
-2. MCP не зеркалит CLI автоматически.
-3. Текущая MCP-поверхность состоит из 8 tool-операций: `run_all_tests`, `run_module_tests`, `build_project`, `dump_config`, `launch_app`, `check_syntax_edt`, `check_syntax_designer_config`, `check_syntax_designer_modules`.
-4. Добавление, удаление или переименование MCP tool-операций является изменением публичного контракта и требует отдельного ADR или явного обновления действующего ADR.
+1. На каждую сессию создаётся `SessionDispatcher` с FIFO-очередью tool-вызовов.
+2. Параллельные `tools/call` к одной сессии не должны перетасовываться на стороне 1С: dispatcher выполняет их строго последовательно.
+3. Inflight-счётчик и `last_call_at` обновляются исключительно через dispatcher, не напрямую из транспорта.
 
-См. [ADR-0005](../decisions/0005-razdelit-cli-i-mcp-publichnye-poverhnosti.md).
+См. [ADR-0021](../decisions/0021-per-session-fifo-kak-obyazatelnyy-invariant.md), [ADR-0024](../decisions/0024-per-session-dispatcher-i-lifecycle.md).
 
-## Config Contract
+## Soft-reconnect по `client_uid`
 
-1. `v8project.yaml`, загруженный в `AppConfig` и прошедший `config::validate`, является главным конфигурационным контрактом проекта.
-2. `source-set[].type` является поддержанным ключом типа source-set; legacy `purpose` не является публичным контрактом.
-3. `source-set.name` является stable identity для ordering, diagnostics, runtime contexts, generated directories и selection logic.
-4. `source-set.name` должен быть уникальным и безопасным path segment; resolved paths должны быть уникальны после normalization.
-5. EDT/external source-set paths и generated work targets не должны пересекаться; reserved work directory names нельзя использовать как EDT source-set names.
-6. Unsupported или unsafe config combinations должны отклоняться на validation boundary до вызова platform DSL.
+1. Сессия идентифицируется устойчивым `client_uid` (UUID, генерируется/задаётся клиентом).
+2. При потере WS запись помечается `Disconnected`, но сохраняется до истечения `reconnection_grace_secs`.
+3. Повторное подключение с тем же `client_uid` и большим `generation` re-attach'ит сессию: prefix и опубликованные tools сохраняются.
+4. Generation монотонно растёт, защищает от гонок между свежим коннектом и обработкой старого `mark_disconnected`.
 
-См. [ADR-0017](../decisions/0017-v8project-yaml-source-set-kak-glavnyy-konfiguratsionnyy-kontrakt.md).
+См. [ADR-0022](../decisions/0022-soft-reconnect-po-client-uid.md).
 
-## Workspace Lock
+## Дедупликация client tools
 
-1. Любая CLI/MCP команда, которая читает или пишет runtime state под `workPath`, должна владеть workspace lock на время выполнения.
-2. Workspace lock берётся по canonical `workPath`.
-3. Lock sidecar является diagnostic-only metadata; отсутствие или ошибка записи sidecar не отменяет сам lock.
-4. Вложенная orchestration использует explicit internal `*_unlocked` entrypoints только под внешним lock.
-5. MCP admission limits не заменяют workspace lock: semaphore ограничивает общую нагрузку, lock сериализует доступ к конкретному `workPath`.
+1. Tools, опубликованные разными клиентами, дедуплицируются по триплету `(kind, name, schema_hash)`.
+2. Совпадающие триплеты — один публичный тул в агрегированном `tools/list`.
+3. Конфликт по схеме (одинаковые `kind` и `name`, разные `schema_hash`) — тул скрывается с предупреждением; ни одна из версий не публикуется как «победитель».
 
-См. [ADR-0011](../decisions/0011-eksklyuzivnoe-vladenie-workpath-na-vremya-komandy.md).
+См. [ADR-0019](../decisions/0019-deduplikatsiya-client-tools-po-kind-name-schema-hash.md).
 
-## MCP Admission And HTTP Sessions
+## Single-tool MCP surface
 
-1. MCP tool calls проходят через общий execution admission boundary.
-2. `mcp.execution.max_concurrent_calls` ограничивает одновременно допущенные MCP tool executions для stdio и HTTP.
-3. MCP admission не заменяет workspace lock и не является HTTP session capacity.
-4. `mcp.http.max_sessions` ограничивает tracked stateful HTTP sessions, а не command execution.
-5. HTTP initialize должен использовать reservation/confirm/release flow; overload возвращает `503`, а stateful non-initialize POST без `Mcp-Session-Id` возвращает `400`.
-6. MCP cancellation/deadline должны маршрутизироваться в общую execution policy из ADR-0014.
+1. Менеджер публикует один собственный tool — `session_list`, который возвращает активные сессии (`id`, `prefix`, `last_call_at`, `inflight`).
+2. Менеджер не публикует tools для управления жизненным циклом сессий (`session.spawn`, `session.kill`, `session.call`, `session.swap`). Любая такая логика лежит на стороне клиента или внешнего оркестратора.
+3. Изменение этого контракта требует нового ADR, явно отменяющего ADR-0034.
 
-См. [ADR-0013](../decisions/0013-mcp-execution-admission-timeout-cancellation-routing-i-http-session-capacity.md).
+См. [ADR-0034](../decisions/0034-single-tool-mcp-surface.md).
 
-## Command Timeout And Cancellation
+## Bidirectional control plane
 
-1. Timeout/cancellation являются общим CLI/MCP command contract, а не MCP-only behavior.
-2. Каждая public CLI/MCP команда должна иметь execution deadline.
-3. Nested orchestration наследует оставшийся budget outer command.
-4. Команда не считается cancelled/timed out наружу, пока underlying operation не доведена до terminal state.
-5. Operations должны иметь interruption safety class: `Interruptible`, `GracefulThenKill`, `CriticalNonAbortable` или `NoExternalProcess`.
-6. Mutating DB operations после входа в critical phase не hard-kill by default; cancellation/timeout recorded и команда ждёт terminal outcome.
-7. Result payloads должны показывать cancellation/timeout request, stage/phase, interruption action и diagnostic paths.
+1. Один WebSocket несёт оба направления control-plane: `client → manager` (`session.register`, `session.bye`, `tools/publish`) и `manager → client` (`tools/list_changed` и т.п.).
+2. Tool-вызовы (`tools/call` ↔ `tools/result`) идут по тому же сокету как обычные JSON-RPC сообщения, не требуя отдельного back-connect HTTP.
+3. На стороне менеджера control-plane и data-plane разделяются на уровне диспатчера, а не транспорта.
 
-См. [ADR-0014](../decisions/0014-edinaya-timeout-cancellation-policy-dlya-cli-i-mcp-komand.md).
+См. [ADR-0018](../decisions/0018-ws-tunnel-vmesto-http-back-connect.md), [ADR-0023](../decisions/0023-bidirectional-control-plane-manager-client.md).
 
-## Dump And Artifacts Publication
+## `tools/list_changed` notify policy
 
-1. Full-replacement `dump` и `artifacts` publication не должны писать напрямую в существующий target.
-2. Full dump и package/external artifacts publication должны идти через staging path рядом с target и backup старого target.
-3. Platform failure до publish должен сохранять старый target.
-4. Publish failure должен пытаться rollback backup -> target и surfaced rollback context, если восстановление не удалось.
-5. Cleanup backup/staging после успешного publish выполняется best-effort; cleanup failure становится warning/degraded success, а не failed publish.
-6. `dump incremental` и `dump partial` являются non-atomic update modes и не получают staging replacement guarantee.
-7. Orphan cleanup должен удалять только stale v8-runner staging/backup paths с matching target identity.
+1. Менеджер шлёт MCP HTTP-клиентам `tools/list_changed` при любом изменении агрегированного `tools/list`: регистрация/disconnect клиента, публикация новых тулов, изменение конфигурации tools-cache.
+2. Клиент-агент в ответ должен пере-пулить `tools/list`. Менеджер не дублирует payload в нотификации.
 
-См. [ADR-0015](../decisions/0015-atomarnaya-publikatsiya-dump-artifacts-cherez-staging-backup.md).
+См. [ADR-0026](../decisions/0026-tools-list-changed-notify-policy.md).
 
-## Pipeline Execution Outcome
+## Origin tracking
 
-1. Runner-like и pipeline-like сценарии должны использовать `ExecutionOutcome<T>` как canonical domain outcome для статуса, structured errors, diagnostics, metrics, artifacts and typed payload.
-2. Команда может сохранять command-specific top-level context и legacy compatibility fields, но не должна создавать новый ad hoc result shape для данных, уже выражаемых через `ExecutionOutcome<T>`.
-3. Pipeline composition живёт в use case слое; CLI/MCP adapters не собирают и не исполняют pipeline blocks.
-4. Blocks обмениваются typed context/input/output, а не hidden global state.
-5. Значимые pipeline blocks должны иметь step entry; минимальная текущая форма `StepResult` должна эволюционировать к richer `ExecutionStep` перед массовым добавлением новых combinations.
-6. `ExecutionOutcome<T>` не заменяет CLI `Envelope<T>`, MCP DTO или `UseCaseFailure<T>`.
-7. Timeout/cancellation statuses in outcome должны следовать terminal-state semantics из ADR-0014.
-8. Не вводить generic pipeline engine до появления повторяемой необходимости; сначала стандартизируются vocabulary, step contract and outcome shape.
+1. Каждая запись в `SessionRegistry` помечается `origin` (`SelfRegistered` или исторический `ManagerSpawned`).
+2. После принятия ADR-0034 (single-tool surface) idle-sweeper больше не фильтрует записи по origin: чистятся все сессии без активности дольше `idle_timeout_secs`.
 
-См. [ADR-0016](../decisions/0016-edinyy-executionoutcome-i-pipeline-steps-dlya-runner-like-stsenariev.md).
+См. [ADR-0028](../decisions/0028-session-origin-tracking.md), [ADR-0034](../decisions/0034-single-tool-mcp-surface.md).
 
-## Use Case Layer
+## Tools cache (TTL + `config_id`)
 
-1. `src/use_cases` остается транспортно-нейтральным orchestration-слоем.
-2. Use case не зависят от `clap`, CLI `Presenter`, CLI `Envelope`, MCP DTO и конкретного transport payload format.
-3. CLI и MCP адаптеры преобразуют свои входные DTO/аргументы в `use_cases::request::*`.
-4. Presentation, envelope rendering и MCP tool payload formatting остаются за пределами use case.
+1. Менеджер кэширует агрегированный `tools/list` per-session с TTL и инвалидирует кэш по изменению `config_id` клиента.
+2. `config_id` приезжает в `session.register` и `tools/publish`; он защищает от гонки «старые тулы из памяти после перерегистрации».
 
-См. [ADR-0006](../decisions/0006-sohranyat-transportno-neytralnyy-use-case-sloy.md).
+См. [ADR-0035](../decisions/0035-tools-cache-with-ttl-and-config-id.md) (`proposed`).
 
-## Change Detection And Partial Load
+## HTTP session capacity
 
-1. Change detection выполняется on-demand во время build/export/load decision, без background watcher.
-2. Persistent state хранится в per-context `redb` storages под `workPath/hash-storages`.
-3. Для `format=DESIGNER` используется один `designer-<sourceSetName>` context на source-set.
-4. Для `format=EDT` используются два context на source-set: `edt-<sourceSetName>` для export decision и `designer-<sourceSetName>` для load decision.
-5. Recoverable scan/storage ошибки должны деградировать в full execution или full rescan; hard storage и concurrent generation errors должны surfaced as failures.
-6. Partial load является conservative file-level strategy: `Configuration.xml`, deletions, unsafe expansion, empty expanded set или превышение threshold ведут к full load.
-7. Prepared snapshot коммитится только после successful platform export/load step.
+1. `mcp.http.max_sessions` ограничивает только трекинг stateful HTTP-сессий, не command execution.
+2. `initialize` использует reservation/confirm/release flow; overload — `503`, stateful non-`initialize` POST без `Mcp-Session-Id` — `400`.
+3. `idle_ttl_secs` — TTL HTTP-сессии без активности; expiry освобождает слот в `max_sessions` лениво (при следующей попытке reserve).
 
-См. [ADR-0012](../decisions/0012-on-demand-change-detection-i-faylovaya-partial-load-strategiya.md).
+## Configuration boundary
 
-## Shared EDT
+1. `v8project.yaml` (или путь, переданный в `--config` / `V8SM_CONFIG`) — единственный источник конфигурации.
+2. Никаких `base_path` / `connection` / `source-set` / `tools.platform` / `tools.edt-cli` / `tests` / `build` — это были поля исторического CLI `v8-runner`, удалены при extraction (ADR-0033).
+3. Дефолты заданы в `src/config/model.rs::Default impl`. CLI-override (`--bind`, `--path`, `--mcp-http`, `--workdir`) применяется поверх загруженного конфига.
 
-1. EDT execution имеет два целевых режима: one-shot и shared interactive.
-2. `tools.edt_cli.interactive_mode=false` означает one-shot `1cedtcli` execution.
-3. `tools.edt_cli.interactive_mode=true` означает shared interactive EDT execution через общий actor/manager и общую interactive session.
-4. Non-shared interactive EDT не является долгосрочным публичным режимом; если он встречается в коде, это implementation gap.
-5. Shared interactive EDT должен сохранять baseline reset/probe, restart, shutdown/restart drain, typed errors and telemetry contract.
-6. Если shared interactive временно покрывает не все EDT-сценарии, gap должен быть зафиксирован в документации или ADR.
+См. [ADR-0033](../decisions/0033-extract-v8-session-manager-from-v8-runner.md).
 
-См. [ADR-0007](../decisions/0007-vydelit-otdelnyy-pereklyuchatel-dlya-shared-edt.md).
+## Identity клиентских tools
 
-## Platform Backends
+1. Имя проксированного tool в публичном `tools/list` всегда имеет вид `<prefix>__<tool>`, где `prefix` зафиксирован при `session.register` (поле `prefix`, см. также `kind`).
+2. Особое значение `kind = vanessa_test_client` отключает префикс (исторический совместимый канал; см. `router.rs`).
+3. Резолв `<prefix>__<tool>` обратно в `(session_id, tool_name)` — на стороне `router`, не транспорта.
 
-1. Низкоуровневые DSL для платформенных инструментов остаются в `src/platform`.
-2. `DesignerDsl`, `IbcmdDsl`, `EdtDsl`, `EnterpriseDsl`, `platform::locator`, `platform::process` и interactive executor не должны протаскивать process details в presentation или transport adapters.
-3. Orchestration вызывает backend DSL через доменные операции и анализирует `PlatformCommandResult`, но не собирает сырые process arguments выше платформенного слоя.
-4. Новый backend добавляется как отдельный adapter/DSL с явными gap и матрицей поддержки.
-
-См. [ADR-0008](../decisions/0008-derzhat-platformennye-backend-dsl-otdelno-ot-orchestration.md).
-
-## Failures
-
-1. Business failures и transport/runtime failures разделены.
-2. Use case возвращают `UseCaseFailure<T>` с transport-neutral metadata и, где возможно, структурированным payload.
-3. MCP service разделяет `McpBusinessFailure<T>` и `McpInternalError`.
-4. Orchestration не знает, как CLI или MCP сериализуют ошибку наружу.
-
-См. [ADR-0009](../decisions/0009-razdelit-business-i-transport-runtime-failures.md).
-
-## CLI Output
-
-1. CLI output проектируется для двух потребителей: человека и AI-агента.
-2. Human-oriented output должен акцентировать значимые места: итог, ошибки, предупреждения, degraded behavior, созданные артефакты, пути к диагностике и следующий actionable hint.
-3. Agent-oriented output должен быть кратким: при чистом успехе не выводить лишний пошаговый журнал, при ошибке давать только минимальный actionable signal.
-4. Формат вывода (`text`/`json`) и аудитория вывода (`human`/`agent`) являются разными осями; `json` не означает автоматически verbose output.
-5. Use case слой не знает audience-specific rendering rules.
-
-См. [ADR-0010](../decisions/0010-razdelit-cli-output-dlya-cheloveka-i-ai-agenta.md).
+См. [ADR-0025](../decisions/0025-clientproxy-tools-publication-i-name-resolution.md).

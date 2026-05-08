@@ -2,21 +2,24 @@
 
 | Термин | Значение |
 | --- | --- |
-| 1С | Локальная корпоративная платформа и утилиты, которыми управляет система |
-| Designer | Конфигуратор 1С и соответствующий формат исходников / backend |
-| EDT | 1C:Enterprise Development Tools и формат EDT-проектов |
-| MCP | Model Context Protocol, через который ассистенты вызывают инструменты |
-| `source-set` | Логическая группа исходников; поддержанные типы: `CONFIGURATION`, `EXTENSION`, `EXTERNAL_DATA_PROCESSORS`, `EXTERNAL_REPORTS` |
-| External source-set | `source-set` типа `EXTERNAL_DATA_PROCESSORS` или `EXTERNAL_REPORTS`, используемый для публикации внешних `.epf`/`.erf` артефактов |
-| YaXUnit | Фреймворк тестирования, используемый для запуска и отчётности по unit-тестам 1С |
-| `workPath` | Каталог времени выполнения для логов, temp-файлов, состояния и сгенерированных артефактов |
-| Workspace lock | Advisory lock по canonical `workPath`, который сериализует публичные CLI/MCP команды над одним runtime root |
-| IBCMD | Командная утилита 1С, используемая как альтернативный backend для части операций |
-| Структурированная бизнес-ошибка | Контролируемая ошибка, возвращаемая как часть контракта CLI/MCP-операции |
-| Execution Context | Transport-neutral invocation metadata, описывающая команду, transport и дополнительные execution flags |
-| Execution Outcome | `ExecutionOutcome<T>`, доменная форма результата runner-like/pipeline-like сценария со статусом, errors, diagnostics, metrics, artifacts и typed payload |
-| Pipeline block | Крупный шаг use-case pipeline: validation, resolve target, prepare workspace, platform command, parse output, publish, cleanup или diagnostics |
-| MCP execution admission | Лимит одновременных MCP tool executions, общий для stdio и HTTP transport |
-| HTTP session capacity | Отдельный лимит tracked stateful HTTP sessions, не равный execution admission |
-| Critical phase | Участок mutating operation, где default hard kill запрещён и cancellation/timeout ждёт terminal outcome |
-| Staging/backup publication | Контракт публикации full replacement target через sibling staging path, backup старого target, rollback attempt и metadata-based cleanup |
+| 1С-клиент | Запущенный экземпляр `1cv8c` (тонкий клиент) с расширением `client_mcp` и транспортным addin'ом, подключающимся к менеджеру по WS. |
+| addin | Транспортный Rust-аддин (`web-transport-addin` / `session_y8`), внешняя компонента 1С — `.so` / `.dll`. Держит WS-сокет к менеджеру. |
+| AI-агент | MCP-клиент: Claude Code, Codex, Cursor, любой другой потребитель MCP HTTP. |
+| `client_mcp` | BSL-расширение из `onec-client-mcp-devkit`. Реализует MCP framing поверх addin'а на стороне 1С. |
+| `client_uid` | Стабильный идентификатор клиента (UUID); используется для soft-reconnect. |
+| `generation` | Монотонный счётчик инкарнаций сессии. Защищает от гонок свежего коннекта и обработки старого `mark_disconnected`. |
+| MCP | Model Context Protocol — протокол, через который AI-агенты вызывают tools. |
+| MCP HTTP | Streamable HTTP-транспорт MCP. Эндпоинт менеджера: `:4001/mcp`. |
+| `prefix` | Namespace, под которым tools клиента видны на MCP HTTP. Имя проксированного tool: `<prefix>__<tool>`. |
+| `kind` | Произвольный строковый идентификатор бизнес-роли клиента. Особый `vanessa_test_client` отключает префикс. |
+| `SessionRegistry` | In-memory реестр сессий. `client_uid` → `SessionRecord`. |
+| `SessionRecord` | Состояние сессии: `prefix`, `generation`, `tools`, статус (`Reserved`/`Active`/`Disconnected`), `last_inbound_at`, `last_call_at`, `origin`. |
+| `SessionDispatcher` | Per-session FIFO очередь tool-вызовов с inflight-счётчиком. |
+| Idle-sweeper | Асинхронный таск, удаляющий записи с `last_call_at + idle_timeout_secs < now`. |
+| Grace-sweeper | Асинхронный таск, удаляющий записи в статусе `Disconnected` после истечения `reconnection_grace_secs`. |
+| Soft-reconnect | Восстановление сессии тем же `client_uid` после краткой потери WS, без сброса prefix и tools. |
+| RFC 6455 Ping/Pong | WS protocol-level liveness; обрабатывается tokio worker addin'а без участия BSL. |
+| `tools/list_changed` | MCP-нотификация менеджера → агенту. Триггер пере-пулинга `tools/list`. |
+| `auth_token` | Опциональный Bearer-токен для MCP HTTP (`mcp.http.auth_token`). |
+| `session_list` | Единственный встроенный tool менеджера. Возвращает активные сессии. |
+| ADR | Architecture Decision Record. Каталог `docs/decisions/`. |

@@ -1,40 +1,29 @@
 ## 9. Архитектурные решения
 
-Источник истины для архитектурных решений — [docs/decisions](../../decisions/README.md). Этот раздел даёт обзор решений и показывает, какие контракты arc42 обязан отражать в остальных разделах.
+Источник истины — [`docs/decisions/`](../../decisions/README.md). Этот раздел перечисляет ADR, актуальные после extraction (ADR-0033). Исторические ADR-0001..0017 и ADR-0027 относились к CLI `v8-runner` и удалены.
 
 | ADR | Статус / дата | Краткое значение для архитектуры |
 | --- | --- | --- |
-| [ADR-0001: Границы поддержки IBCMD как ограниченного backend](../../decisions/0001-granitsy-podderzhki-ibcmd-kak-ogranichennogo-backend.md) | `accepted`, `2026-04-02` | `IBCMD` принят как ограниченный сейчас backend для `init`, `build`, `dump`, `extensions`; file-only и partial-dump ограничения считаются gaps, а не целевой нормой. |
-| [ADR-0002: Изолировать runtime state по source-set под workPath](../../decisions/0002-izolirovat-runtime-state-po-source-set-pod-workpath.md) | `accepted`, `2026-04-20` | `source-set` является минимальной единицей оркестрации, `workPath` — owned runtime root; EDT flow разделяет `edt-*` и `designer-*` change-detection contexts. |
-| [ADR-0003: Поддерживать серверные ИБ для всех инструментов](../../decisions/0003-podderzhivat-servernye-ib-dlya-vseh-instrumentov.md) | `accepted`, `2026-04-20` | Server infobase support является целевым контрактом всех публичных инструментов, а file-only поведение допускается только как явно описанный gap. |
-| [ADR-0004: Автообнаруживать компоненты платформы 1С по версии-маске](../../decisions/0004-avtoobnaruzhivat-komponenty-platformy-1s-po-versii-maske.md) | `accepted`, `2026-04-20` | Use case и platform adapters получают `1cv8`, `1cv8c`, `ibcmd` через общий locator/facade с поддержкой exact version и version masks. |
-| [ADR-0005: Разделить CLI и MCP публичные поверхности](../../decisions/0005-razdelit-cli-i-mcp-publichnye-poverhnosti.md) | `accepted`, `2026-04-20` | MCP не зеркалит CLI; текущая MCP-поверхность состоит из 8 tool-операций, а расширение MCP требует отдельного решения или обновления ADR. |
-| [ADR-0006: Сохранять транспортно-нейтральный use case слой](../../decisions/0006-sohranyat-transportno-neytralnyy-use-case-sloy.md) | `accepted`, `2026-04-20` | `src/use_cases` не зависит от `clap`, CLI `Presenter`/`Envelope`, MCP DTO и concrete transport payload format. |
-| [ADR-0007: Свести EDT execution к one-shot и shared interactive режимам](../../decisions/0007-vydelit-otdelnyy-pereklyuchatel-dlya-shared-edt.md) | `accepted`, `2026-04-20` | Целевые EDT modes — только one-shot и shared interactive; direct non-shared interactive sessions считаются implementation gap. |
-| [ADR-0008: Держать платформенные backend DSL отдельно от orchestration](../../decisions/0008-derzhat-platformennye-backend-dsl-otdelno-ot-orchestration.md) | `accepted`, `2026-04-20` | Designer, IBCMD, EDT, Enterprise DSL и process/locator details остаются в `src/platform`, а use case работают с domain-level operations/results. |
-| [ADR-0009: Разделить structured business failures и transport/runtime failures](../../decisions/0009-razdelit-business-i-transport-runtime-failures.md) | `accepted`, `2026-04-20` | Use case возвращают `UseCaseFailure<T>`; MCP различает `McpBusinessFailure<T>` и `McpInternalError`, не смешивая business payload и runtime faults. |
-| [ADR-0010: Разделить CLI output для человека и AI-агента](../../decisions/0010-razdelit-cli-output-dlya-cheloveka-i-ai-agenta.md) | `accepted`, `2026-04-20` | CLI presentation разделяет human highlights и agent minimal signal; format (`text`/`json`) и audience являются разными осями. |
-| [ADR-0011: Эксклюзивное владение `workPath` на время команды](../../decisions/0011-eksklyuzivnoe-vladenie-workpath-na-vremya-komandy.md) | `accepted`, `2026-04-20` | Public CLI/MCP commands над `workPath` должны брать advisory lock по canonical path; nested flows используют explicit unlocked entrypoints. |
-| [ADR-0012: On-demand change detection и файловая partial-load стратегия](../../decisions/0012-on-demand-change-detection-i-faylovaya-partial-load-strategiya.md) | `accepted`, `2026-04-20` | Change detection запускается on-demand, хранит per-context `redb` snapshots и деградирует в full execution при unsafe partial cases. |
-| [ADR-0013: MCP execution admission, timeout/cancellation routing и HTTP session capacity](../../decisions/0013-mcp-execution-admission-timeout-cancellation-routing-i-http-session-capacity.md) | `accepted`, `2026-04-20` | MCP execution admission, timeout/cancellation routing и HTTP session capacity являются разными guardrails; MCP cancellation/deadline должны идти в общую execution policy. |
-| [ADR-0014: Единая timeout/cancellation policy для CLI и MCP команд](../../decisions/0014-edinaya-timeout-cancellation-policy-dlya-cli-i-mcp-komand.md) | `accepted`, `2026-04-20` | Целевой контракт: каждая public command имеет deadline, cancellation ждёт terminal state, mutating critical phases не hard-kill by default. |
-| [ADR-0015: Атомарная публикация dump/artifacts через staging/backup](../../decisions/0015-atomarnaya-publikatsiya-dump-artifacts-cherez-staging-backup.md) | `accepted`, `2026-04-21` | Full replacement dump/artifacts публикуются через sibling staging/backup, rollback context и metadata-based orphan cleanup; incremental/partial остаются non-atomic. |
-| [ADR-0016: Единый `ExecutionOutcome` и pipeline steps для runner-like сценариев](../../decisions/0016-edinyy-executionoutcome-i-pipeline-steps-dlya-runner-like-stsenariev.md) | `accepted`, `2026-04-21` | Runner-like и pipeline-like сценарии используют `ExecutionOutcome<T>` как canonical domain outcome и общую vocabulary pipeline blocks/steps. |
-| [ADR-0017: `v8project.yaml` / `source-set` как главный конфигурационный контракт](../../decisions/0017-v8project-yaml-source-set-kak-glavnyy-konfiguratsionnyy-kontrakt.md) | `accepted`, `2026-04-20` | `v8project.yaml` -> `AppConfig` -> `config::validate` является главным config contract; `source-set[].type`, `source-set.name` и `workPath` задают runtime identity. |
-
-Архитектурные инварианты для агентов и контрибьюторов зафиксированы в [docs/architecture/invariants.md](../invariants.md).
-
-### Сквозные выводы из ADR
-
-- Public surface changes нужно оценивать отдельно для CLI и MCP: наличие CLI-команды не означает доступность MCP tool.
-- Use case layer остаётся общей транспортно-нейтральной orchestration boundary, а adapters отвечают за presentation, DTO и transport/runtime failures.
-- `source-set.name` и canonical `workPath` являются runtime identity. Изменения naming/path rules затрагивают config validation, change detection, generated directories и workspace lock.
-- MCP concurrency имеет два независимых контура: execution admission для tool calls и HTTP session capacity для stateful transport lifecycle.
-- Target publication safety не обеспечивается workspace lock: full replacement outputs требуют staging/backup contract рядом с target.
-- ADR-0014 и ADR-0016 описывают целевую архитектуру с известными migration gaps. Новые команды должны следовать этим контрактам, даже если часть старых сценариев ещё находится в переходном состоянии.
+| [ADR-0018: WS-tunnel вместо HTTP back-connect](../../decisions/0018-ws-tunnel-vmesto-http-back-connect.md) | `accepted`, `2026-04-28` | Один WS несёт control- и data-plane; HTTP back-connect не используется. |
+| [ADR-0019: Дедупликация client tools по `(kind, name, schema_hash)`](../../decisions/0019-deduplikatsiya-client-tools-po-kind-name-schema-hash.md) | `accepted`, `2026-04-28` | Одинаковые тулы от разных клиентов сводятся в один публичный; конфликты по схеме скрываются. |
+| [ADR-0020: `SessionLaunchParamsCarrier`](../../decisions/0020-sessionlaunchparamscarrier-kak-abstraktsiya-dostavki-parametrov.md) | `accepted`, `2026-04-28` | Доставка `manager_url` через константу расширения, опциональные `/C`-параметры. |
+| [ADR-0021: Per-session FIFO как обязательный инвариант](../../decisions/0021-per-session-fifo-kak-obyazatelnyy-invariant.md) | `accepted`, `2026-04-28` | На каждую сессию — последовательная очередь tool-вызовов. |
+| [ADR-0022: Soft-reconnect по `client_uid`](../../decisions/0022-soft-reconnect-po-client-uid.md) | `accepted`, `2026-04-28` | Сессия переживает потерю WS в пределах `reconnection_grace_secs`. |
+| [ADR-0023: Bidirectional control-plane](../../decisions/0023-bidirectional-control-plane-manager-client.md) | `accepted`, `2026-04-28` | `tools/list_changed` и т.п. идут через тот же WS, без HTTP back-connect. |
+| [ADR-0024: Per-session dispatcher и lifecycle](../../decisions/0024-per-session-dispatcher-i-lifecycle.md) | `accepted`, `2026-04-28` | `SessionDispatcher` владеет очередью + inflight + last_call_at. |
+| [ADR-0025: ClientProxy tools — публикация и резолвинг](../../decisions/0025-clientproxy-tools-publication-i-name-resolution.md) | `accepted`, `2026-04-28` | Имя `<prefix>__<tool>` на MCP HTTP; резолв в `(session_id, tool_name)`. |
+| [ADR-0026: Политика `tools/list_changed` уведомлений](../../decisions/0026-tools-list-changed-notify-policy.md) | `accepted`, `2026-04-28` | Менеджер шлёт notify, не дублируя payload; клиент пере-пуливает `tools/list`. |
+| [ADR-0028: Origin tracking сессий](../../decisions/0028-session-origin-tracking.md) | `proposed`, `2026-04-29` | Поле `origin` на записи. Фильтр idle-sweeper по origin снят в ADR-0034. |
+| [ADR-0029: `host_id` + `pid` + `capabilities` в `session.register`](../../decisions/0029-host-id-pid-v-register-payload.md) | `proposed`, `2026-04-29` | Идентификация хоста в payload регистрации (для логов и диагностики). |
+| [ADR-0030: Inline launch-spec в `session.spawn`](../../decisions/0030-inline-launch-spec-v-session-spawn.md) | `superseded by ADR-0034` | Менеджер сессии не запускает. |
+| [ADR-0031: Двойной backend исполнения spawn/kill](../../decisions/0031-dual-backend-local-remote-i-kill-matrix.md) | `superseded by ADR-0034` | LocalBackend/RemoteBackend исключены из публичной поверхности. |
+| [ADR-0032: Менеджер нативно в основном devcontainer](../../decisions/0032-manager-natively-v-osnovnom-devcontainer.md) | `accepted`, `2026-04-29` | Деплой бинаря, биндинг на `0.0.0.0:4000`/`:4001`. |
+| [ADR-0033: Отделить v8-session-manager от форка v8-runner](../../decisions/0033-extract-v8-session-manager-from-v8-runner.md) | `accepted`, `2026-05-06` | Extraction; ADR-0001..0017, ADR-0027 удалены вместе с CLI. |
+| [ADR-0034: Single-tool MCP surface](../../decisions/0034-single-tool-mcp-surface.md) | `accepted`, `2026-05-06` | Только `session_list` + проксированные тулы клиентов. |
+| [ADR-0035: Кеш проксированных тулов с TTL и `config_id`](../../decisions/0035-tools-cache-with-ttl-and-config-id.md) | `proposed`, `2026-05-06` | Per-session кеш `tools/list` с инвалидацией по `config_id`. |
 
 ### Правила актуализации
 
 - При добавлении или изменении ADR синхронизировать этот раздел и затронутые arc42-разделы, а не только список ссылок.
 - При изменении любого инварианта сначала обновлять соответствующий ADR или добавлять новый ADR, который явно заменяет старое решение.
-- Если реализация временно расходится с принятым ADR, фиксировать это как implementation gap в разделе 11 и в профильной публичной документации, когда gap виден пользователю.
+- Если реализация временно расходится с принятым ADR, фиксировать это как implementation gap в разделе 11.
