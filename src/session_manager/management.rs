@@ -39,9 +39,19 @@ impl From<SessionState> for SessionStateView {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionListItem {
+    /// Сквозной UID сессии (`session_id` ≡ `client_uid`). Стабилен при
+    /// soft-reconnect (см. ADR-0022). Используется внешним оркестратором
+    /// (например, v8-runner) как идентификатор сессии.
     pub session_id: String,
     pub kind: String,
     pub version: String,
+    /// Имя информационной базы 1С (naming v2 от 2026-05-09).
+    pub infobase_name: String,
+    /// Внутренний номер сеанса 1С (`НомерСеанса()` платформы).
+    pub ib_session_number: u32,
+    /// Идентификатор хоста, на котором живёт процесс клиента (ADR‑0029).
+    /// Fallback `"unknown"` для legacy-клиентов без `host_id`.
+    pub host_id: String,
     pub state: SessionStateView,
     pub tools: Vec<ToolDescriptor>,
     pub inflight: u32,
@@ -72,6 +82,9 @@ pub fn list(registry: &Arc<SessionRegistry>) -> SessionListResult {
             session_id: rec.session_id,
             kind: rec.kind,
             version: rec.version,
+            infobase_name: rec.infobase_name,
+            ib_session_number: rec.ib_session_number,
+            host_id: rec.host_id,
             state: rec.state.into(),
             tools: rec.tools,
         })
@@ -97,6 +110,8 @@ mod tests {
             client_uid: uid.to_owned(),
             kind: kind.to_owned(),
             version: "1.0".to_owned(),
+            infobase_name: "test_db".to_owned(),
+            ib_session_number: 1,
             tools: vec![ToolDescriptor {
                 name: tool.to_owned(),
                 description: None,
@@ -183,6 +198,8 @@ mod tests {
                 "client_uid": "A",
                 "kind": "client",
                 "version": "1.0",
+                "infobase_name": "test_db",
+                "ib_session_number": 1,
                 "tools": [{"name": "echo", "input_schema": {"type": "object"}}]
             }
         });
@@ -216,5 +233,31 @@ mod tests {
         assert_eq!(json["sessions"][0]["session_id"], "uid-1");
         assert_eq!(json["sessions"][0]["state"], "active");
         assert_eq!(json["sessions"][0]["tools"][0]["name"], "echo");
+    }
+
+    #[test]
+    fn session_list_exposes_infobase_and_ib_session_number() {
+        // Naming v2: list(...) пробрасывает infobase_name, ib_session_number,
+        // host_id из SessionRecord.
+        let reg = Arc::new(SessionRegistry::new());
+        let mut p = params("uid-1", "client", "echo");
+        p.infobase_name = "drive_dev".to_owned();
+        p.ib_session_number = 17;
+        p.host_id = Some("box-42".to_owned());
+        reg.register(p, Instant::now(), None).unwrap();
+
+        let result = list(&reg);
+        let item = &result.sessions[0];
+        assert_eq!(item.session_id, "uid-1");
+        assert_eq!(item.infobase_name, "drive_dev");
+        assert_eq!(item.ib_session_number, 17);
+        assert_eq!(item.host_id, "box-42");
+
+        // host_id fallback "unknown", когда клиент не передал поле.
+        let reg2 = Arc::new(SessionRegistry::new());
+        reg2.register(params("uid-2", "client", "echo"), Instant::now(), None)
+            .unwrap();
+        let result2 = list(&reg2);
+        assert_eq!(result2.sessions[0].host_id, "unknown");
     }
 }
