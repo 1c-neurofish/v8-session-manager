@@ -267,9 +267,9 @@ impl ServerHandler for McpToolServer {
                 let object = s.input_schema.as_object().cloned().unwrap_or_default();
                 Tool::new(
                     s.published_name.clone(),
-                    s.description
-                        .clone()
-                        .unwrap_or_else(|| format!("ClientProxy tool from kind={}", s.kind)),
+                    s.description.clone().unwrap_or_else(|| {
+                        format!("ClientProxy tool from kinds={}", s.kinds.join(","))
+                    }),
                     Arc::new(object),
                 )
             })
@@ -309,10 +309,10 @@ impl McpToolServer {
         let view = build_proxy_view(&self.session_registry);
         let resolved = match resolve_published(request.name.as_ref(), &view, &self.proxy_router) {
             Ok(r) => r,
-            Err(ResolveError::SchemaConflict { kind, tool_name }) => {
+            Err(ResolveError::SchemaConflict { tool_name }) => {
                 return Err(ErrorData::invalid_params(
                     format!(
-                        "tool '{kind}__{tool_name}' is hidden due to schema conflict — use top-level proxy with a unique name"
+                        "tool '{tool_name}' is hidden due to schema conflict — sessions registered different schemas under the same name"
                     ),
                     None,
                 ));

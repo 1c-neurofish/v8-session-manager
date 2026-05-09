@@ -1,7 +1,9 @@
 # ADR-0025: ClientProxy tools — публикация в `tools/list` и резолвинг имени
 
-- Статус: `accepted`
+- Статус: `accepted` (частично пересмотрен 2026-05-09 — naming-правило заменено)
 - Дата: `2026-04-28`
+
+> ⚠️ **Naming v2 (2026-05-09).** Схема имён `<kind>__<tool_name>` из §«Решение» более не действует. Текущее правило: `published_name = <tool_name>` (голое), дедуп по `(tool_name, schema_hash)`. Резолвинг по имени смотрит группу `tool_name` без разбора префикса. Логика hidden/`SchemaConflict` сохранена. Полное описание — README §«Naming contract (v2)».
 
 ## Контекст
 

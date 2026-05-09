@@ -617,6 +617,8 @@ mod tests {
                 client_uid: uid.to_owned(),
                 kind: kind.to_owned(),
                 version: "1.0".to_owned(),
+                infobase_name: "test_db".to_owned(),
+                ib_session_number: 1,
                 tools: vec![ToolDescriptor {
                     name: tool.to_owned(),
                     description: None,

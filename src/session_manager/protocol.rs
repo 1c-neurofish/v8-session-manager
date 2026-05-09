@@ -237,6 +237,13 @@ pub struct SessionRegisterParams {
     pub client_uid: String,
     pub kind: String,
     pub version: String,
+    /// Имя информационной базы 1С (naming v2 от 2026-05-09). BC-breaking:
+    /// поле обязательно, пустая строка отклоняется (см. [`Self::validate`]).
+    #[serde(deserialize_with = "deserialize_non_empty_string")]
+    pub infobase_name: String,
+    /// Внутренний номер сеанса 1С (`НомерСеанса()` платформы). BC-breaking:
+    /// поле обязательно (см. [`Self::validate`]).
+    pub ib_session_number: u32,
     pub tools: Vec<ToolDescriptor>,
     /// Идентификатор хоста клиента (ADR‑0029). Опционален для legacy-клиентов.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -250,6 +257,19 @@ pub struct SessionRegisterParams {
     pub prompts: Option<Vec<Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extras: Option<Value>,
+}
+
+fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    if s.is_empty() {
+        return Err(serde::de::Error::custom(
+            "field must be a non-empty string",
+        ));
+    }
+    Ok(s)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -487,6 +507,8 @@ mod tests {
             client_uid: "uid-1".to_owned(),
             kind: "client".to_owned(),
             version: "1.0".to_owned(),
+            infobase_name: "test_db".to_owned(),
+            ib_session_number: 42,
             tools: vec![ToolDescriptor {
                 name: "echo".to_owned(),
                 description: None,
@@ -506,5 +528,60 @@ mod tests {
         let text = request.to_text();
         let re = WireMessage::parse(&text).unwrap();
         assert_eq!(re, request);
+    }
+
+    #[test]
+    fn register_rejects_when_infobase_name_is_empty() {
+        // Naming v2: infobase_name обязателен и не может быть пустым.
+        let value = json!({
+            "client_uid": "uid-1",
+            "kind": "client",
+            "version": "1.0",
+            "infobase_name": "",
+            "ib_session_number": 1,
+            "tools": [],
+        });
+        let err = serde_json::from_value::<SessionRegisterParams>(value).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("non-empty"),
+            "expected non-empty rejection, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn register_rejects_when_infobase_name_is_missing() {
+        // Naming v2: отсутствие поля = отказ (без serde(default)).
+        let value = json!({
+            "client_uid": "uid-1",
+            "kind": "client",
+            "version": "1.0",
+            "ib_session_number": 1,
+            "tools": [],
+        });
+        let err = serde_json::from_value::<SessionRegisterParams>(value).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("infobase_name"),
+            "expected missing field error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn register_rejects_when_ib_session_number_is_missing() {
+        // Naming v2: отсутствие поля = отказ.
+        let value = json!({
+            "client_uid": "uid-1",
+            "kind": "client",
+            "version": "1.0",
+            "infobase_name": "test_db",
+            "tools": [],
+        });
+        let err = serde_json::from_value::<SessionRegisterParams>(value).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("ib_session_number"),
+            "expected missing field error, got: {msg}"
+        );
     }
 }

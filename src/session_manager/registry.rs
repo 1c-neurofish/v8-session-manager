@@ -48,6 +48,13 @@ pub struct SessionRecord {
     pub session_id: String,
     pub kind: String,
     pub version: String,
+    /// Имя информационной базы 1С (naming v2 от 2026-05-09). Берётся из
+    /// `session.register.infobase_name`; обновляется при soft reconnect.
+    pub infobase_name: String,
+    /// Внутренний номер сеанса 1С (`НомерСеанса()` платформы).
+    /// Обновляется при soft reconnect — фактический номер в новом сеансе
+    /// 1С может отличаться от номера предыдущего сеанса.
+    pub ib_session_number: u32,
     pub tools: Vec<ToolDescriptor>,
     pub state: SessionState,
     /// Идентификатор хоста, на котором работает процесс. Берётся из поля
@@ -167,6 +174,8 @@ impl SessionRegistry {
                     existing.tools = params.tools;
                     existing.version = params.version;
                     existing.kind = params.kind;
+                    existing.infobase_name = params.infobase_name;
+                    existing.ib_session_number = params.ib_session_number;
                     existing.connection = connection;
                     existing.connection_generation = new_gen;
                     if let Some(hid) = params.host_id {
@@ -191,6 +200,8 @@ impl SessionRegistry {
             session_id: params.client_uid.clone(),
             kind: params.kind,
             version: params.version,
+            infobase_name: params.infobase_name,
+            ib_session_number: params.ib_session_number,
             tools: params.tools,
             state: SessionState::Active,
             host_id: params.host_id.unwrap_or_else(|| "unknown".to_owned()),
@@ -417,6 +428,8 @@ mod tests {
             client_uid: uid.to_owned(),
             kind: kind.to_owned(),
             version: "1.0.0".to_owned(),
+            infobase_name: "test_db".to_owned(),
+            ib_session_number: 1,
             tools: vec![ToolDescriptor {
                 name: tool_name.to_owned(),
                 description: None,
@@ -503,6 +516,31 @@ mod tests {
         assert_eq!(rec.session_id, "uid-1");
         // Реестр всё ещё содержит ровно одну запись.
         assert_eq!(reg.len(), 1);
+    }
+
+    #[test]
+    fn reconnect_updates_infobase_and_ib_session_number() {
+        // Naming v2: при soft reconnect значения из нового register'а
+        // перетирают старые — у нового сеанса 1С может быть другой
+        // ib_session_number.
+        let reg = SessionRegistry::new();
+        let t0 = Instant::now();
+        let mut first = params("uid-1", "client", "echo");
+        first.infobase_name = "db_a".to_owned();
+        first.ib_session_number = 7;
+        reg.register(first, t0, None).unwrap();
+
+        reg.mark_disconnected("uid-1", t0 + Duration::from_secs(1));
+
+        let mut second = params("uid-1", "client", "echo");
+        second.infobase_name = "db_a".to_owned();
+        second.ib_session_number = 99;
+        reg.register(second, t0 + Duration::from_secs(2), None)
+            .unwrap();
+
+        let rec = reg.get("uid-1").unwrap();
+        assert_eq!(rec.infobase_name, "db_a");
+        assert_eq!(rec.ib_session_number, 99);
     }
 
     #[test]
