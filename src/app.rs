@@ -43,12 +43,9 @@ pub fn run() -> i32 {
     }
 
     let level = cli.log_level.as_deref().unwrap_or("info");
-    if let Err(err) = crate::support::logging::init_action_logging(
-        level,
-        "json",
-        false,
-        &config.work_path,
-    ) {
+    if let Err(err) =
+        crate::support::logging::init_action_logging(level, "json", false, &config.work_path)
+    {
         eprintln!("{err}");
         return exit_codes::RUNTIME_ERROR;
     }

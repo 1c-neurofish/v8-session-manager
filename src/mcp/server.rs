@@ -51,9 +51,9 @@ use crate::session_manager::notify::{spawn_notifier, ToolsListChangedNotifier, D
 use crate::session_manager::protocol::{ToolCallParams, ToolCallResult};
 use crate::session_manager::registry::SessionRegistry;
 use crate::session_manager::router::{
-    arguments_to_value, build_proxy_view, proxy_tools, resolve_published, ProxyRouter,
-    ResolveError,
+    arguments_to_value, build_proxy_view, proxy_tools, resolve_published, ProxyRouter, ResolveError,
 };
+use crate::session_manager::tools_cache::{ToolsCacheConfig, ToolsCacheStore};
 use crate::session_manager::transport as session_transport;
 
 const HTTP_BODY_LIMIT_BYTES: usize = 1024 * 1024;
@@ -104,15 +104,31 @@ pub fn serve_session_manager(config: AppConfig) -> Result<(), McpServerError> {
         let shutdown = CancellationToken::new();
 
         let registry = Arc::new(SessionRegistry::new());
+
+        // ADR-0035: persistent tools cache. Кешовый storage_path резолвится
+        // от workPath, если в YAML дан относительный путь или None.
+        let cache_config = build_tools_cache_config(&config);
+        let cache_notifier = {
+            let reg = Arc::clone(&registry);
+            Arc::new(move || reg.mark_tools_changed_external()) as Arc<dyn Fn() + Send + Sync>
+        };
+        let tools_cache = ToolsCacheStore::load_or_empty(&cache_config, cache_notifier);
+        registry.attach_tools_cache(Arc::clone(&tools_cache));
+
         let lifecycle = crate::session_manager::lifecycle::LifecycleManager::new(
             Arc::clone(&registry),
             session_cfg.graceful_kill_grace_ms,
         );
 
-        let server = McpToolServer::new(config.clone()).with_session_registry(Arc::clone(&registry));
+        let server = McpToolServer::new(config.clone())
+            .with_session_registry(Arc::clone(&registry))
+            .with_tools_cache(Arc::clone(&tools_cache));
         let notifier = server.tools_changed_notifier();
-        let notifier_task =
-            spawn_notifier(Arc::clone(&registry), Arc::clone(&notifier), DEBOUNCE_WINDOW);
+        let notifier_task = spawn_notifier(
+            Arc::clone(&registry),
+            Arc::clone(&notifier),
+            DEBOUNCE_WINDOW,
+        );
 
         let idle_timeout = std::time::Duration::from_secs(session_cfg.idle_timeout_secs);
         let sweeper_task = crate::session_manager::lifecycle::run_idle_sweeper(
@@ -194,6 +210,9 @@ pub struct McpToolServer {
     session_registry: Arc<SessionRegistry>,
     proxy_router: Arc<ProxyRouter>,
     tools_changed_notifier: Arc<ToolsListChangedNotifier>,
+    /// ADR-0035: persistent tools cache. `None` для unit-тестов, которые
+    /// конструируют сервер без `serve_session_manager` (поведение — ADR-0034).
+    tools_cache: Option<Arc<ToolsCacheStore>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -204,6 +223,7 @@ impl McpToolServer {
             session_registry: Arc::new(SessionRegistry::new()),
             proxy_router: Arc::new(ProxyRouter::new()),
             tools_changed_notifier: ToolsListChangedNotifier::new(),
+            tools_cache: None,
             tool_router: Self::tool_router(),
         }
     }
@@ -213,8 +233,33 @@ impl McpToolServer {
         self
     }
 
+    pub fn with_tools_cache(mut self, cache: Arc<ToolsCacheStore>) -> Self {
+        self.tools_cache = Some(cache);
+        self
+    }
+
     pub fn tools_changed_notifier(&self) -> Arc<ToolsListChangedNotifier> {
         Arc::clone(&self.tools_changed_notifier)
+    }
+}
+
+fn build_tools_cache_config(config: &AppConfig) -> ToolsCacheConfig {
+    let storage_path = config
+        .tools_cache
+        .storage_path
+        .as_ref()
+        .map(|p| {
+            if p.is_absolute() {
+                p.clone()
+            } else {
+                config.work_path.join(p)
+            }
+        })
+        .unwrap_or_else(|| config.work_path.join("tools_cache.json"));
+    ToolsCacheConfig {
+        enabled: config.tools_cache.enabled,
+        cache_life: config.tools_cache.cache_life_period,
+        storage_path,
     }
 }
 
@@ -228,6 +273,33 @@ impl McpToolServer {
         let result = management::list(&self.session_registry);
         let value = serde_json::to_value(&result)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::structured(value))
+    }
+
+    /// ADR-0035: сброс persistent tools cache. Без `config_id` — очистить
+    /// весь кеш; с `config_id` — удалить только запись с этим `config_id`.
+    /// После сброса менеджер отправит `notifications/tools/list_changed`.
+    #[tool(description = "Reset cached proxied tools (full or by config_id).")]
+    async fn tools_cache_reset(
+        &self,
+        Parameters(req): Parameters<crate::mcp::request::McpToolsCacheResetRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Some(cache) = self.tools_cache.as_ref() else {
+            return Ok(CallToolResult::structured(serde_json::json!({
+                "removed": 0,
+                "enabled": false,
+                "message": "tools_cache is not configured"
+            })));
+        };
+        let (removed, scope) = match req.config_id.as_deref() {
+            Some(cid) if !cid.is_empty() => (cache.reset_by_config_id(cid), "by_config_id"),
+            _ => (cache.reset_all(), "all"),
+        };
+        let value = serde_json::json!({
+            "removed": removed,
+            "scope": scope,
+            "enabled": cache.enabled(),
+        });
         Ok(CallToolResult::structured(value))
     }
 }
@@ -294,10 +366,36 @@ impl ServerHandler for McpToolServer {
 }
 
 impl McpToolServer {
-    pub(crate) fn list_all_tools_inner(&self) -> Vec<Tool> {
+    pub fn list_all_tools_inner(&self) -> Vec<Tool> {
         let mut tools = self.tool_router.list_all();
         let view = build_proxy_view(&self.session_registry);
-        tools.extend(proxy_tools(&view));
+        let live = proxy_tools(&view);
+
+        // ADR-0035: дополняем live-view содержимым persistent cache,
+        // дедуплицируя по published_name. Live имеет приоритет — если
+        // тул уже опубликован живой сессией, кешевая копия игнорируется.
+        let mut seen: HashSet<String> = tools
+            .iter()
+            .chain(live.iter())
+            .map(|t| t.name.to_string())
+            .collect();
+        tools.extend(live);
+        if let Some(cache) = self.tools_cache.as_ref() {
+            for entry in cache.list_all() {
+                for tool in entry.tools {
+                    if seen.insert(tool.name.clone()) {
+                        let object = tool.input_schema.as_object().cloned().unwrap_or_default();
+                        let description = tool.description.clone().unwrap_or_else(|| {
+                            format!(
+                                "Cached ClientProxy tool (kind={}, config_id={})",
+                                entry.kind, entry.config_id
+                            )
+                        });
+                        tools.push(Tool::new(tool.name, description, Arc::new(object)));
+                    }
+                }
+            }
+        }
         tools
     }
 
@@ -318,15 +416,19 @@ impl McpToolServer {
                 ));
             }
             Err(ResolveError::NoActiveSessions) => {
-                return Err(ErrorData::invalid_params(
-                    format!(
-                        "no active sessions for proxy tool '{}'",
-                        request.name.as_ref()
-                    ),
-                    None,
-                ));
+                return Ok(no_live_session_response(request.name.as_ref(), None));
             }
             Err(_) => {
+                // ADR-0035: имя может быть известно через persistent cache,
+                // но live-сессии нет. Возвращаем structured tool error
+                // вместо method_not_found, чтобы AI-агент получил _meta с
+                // error_code="no_live_session".
+                if let Some(cache_hit) = self.lookup_cache_entry(request.name.as_ref()) {
+                    return Ok(no_live_session_response(
+                        request.name.as_ref(),
+                        Some(cache_hit),
+                    ));
+                }
                 return Err(ErrorData::method_not_found::<
                     rmcp::model::CallToolRequestMethod,
                 >());
@@ -366,6 +468,63 @@ impl McpToolServer {
             .await;
         dispatcher_outcome_to_call_result(outcome)
     }
+}
+
+/// Хит в persistent cache: какому `(kind, config_id)` соответствует tool.
+#[derive(Debug, Clone)]
+struct CacheHit {
+    kind: String,
+    config_id: String,
+}
+
+impl McpToolServer {
+    /// Найти кешевую запись, содержащую tool с указанным `name`.
+    fn lookup_cache_entry(&self, name: &str) -> Option<CacheHit> {
+        let cache = self.tools_cache.as_ref()?;
+        for entry in cache.list_all() {
+            if entry.tools.iter().any(|t| t.name == name) {
+                return Some(CacheHit {
+                    kind: entry.kind,
+                    config_id: entry.config_id,
+                });
+            }
+        }
+        None
+    }
+}
+
+/// Структурированный MCP tool-error для отсутствующей live-сессии (ADR-0035).
+fn no_live_session_response(tool_name: &str, cache_hit: Option<CacheHit>) -> CallToolResult {
+    let (kind, config_id) = match cache_hit {
+        Some(hit) => (Some(hit.kind), Some(hit.config_id)),
+        None => (None, None),
+    };
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "error_code".to_owned(),
+        serde_json::Value::String("no_live_session".to_owned()),
+    );
+    meta.insert(
+        "tool".to_owned(),
+        serde_json::Value::String(tool_name.to_owned()),
+    );
+    if let Some(k) = kind {
+        meta.insert("kind".to_owned(), serde_json::Value::String(k));
+    }
+    if let Some(cid) = config_id {
+        meta.insert("config_id".to_owned(), serde_json::Value::String(cid));
+    }
+    let payload = serde_json::json!({
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "Tool '{tool_name}' is currently unavailable: no live session.",
+            )
+        }],
+        "isError": true,
+        "_meta": serde_json::Value::Object(meta),
+    });
+    CallToolResult::structured_error(payload)
 }
 
 fn dispatcher_outcome_to_call_result(

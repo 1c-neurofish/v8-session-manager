@@ -145,8 +145,7 @@ pub fn build_proxy_view(registry: &SessionRegistry) -> ProxyView {
     }
     view.published
         .sort_by(|a, b| a.published_name.cmp(&b.published_name));
-    view.hidden
-        .sort_by(|a, b| a.tool_name.cmp(&b.tool_name));
+    view.hidden.sort_by(|a, b| a.tool_name.cmp(&b.tool_name));
     view
 }
 
@@ -280,6 +279,7 @@ mod tests {
                     input_schema: schema,
                 })
                 .collect(),
+            config_id: None,
             host_id: None,
             pid: None,
             resources: None,

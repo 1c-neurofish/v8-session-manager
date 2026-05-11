@@ -245,6 +245,11 @@ pub struct SessionRegisterParams {
     /// поле обязательно (см. [`Self::validate`]).
     pub ib_session_number: u32,
     pub tools: Vec<ToolDescriptor>,
+    /// Опциональный идентификатор конфигурации клиента (ADR‑0035).
+    /// Если не задан, менеджер использует `config_id == kind`. Используется
+    /// для адресации persistent tools-cache по ключу `(kind, config_id)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_id: Option<String>,
     /// Идентификатор хоста клиента (ADR‑0029). Опционален для legacy-клиентов.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_id: Option<String>,
@@ -265,9 +270,7 @@ where
 {
     let s = String::deserialize(deserializer)?;
     if s.is_empty() {
-        return Err(serde::de::Error::custom(
-            "field must be a non-empty string",
-        ));
+        return Err(serde::de::Error::custom("field must be a non-empty string"));
     }
     Ok(s)
 }
@@ -370,7 +373,8 @@ mod tests {
 
     #[test]
     fn parse_request_round_trip() {
-        let text = r#"{"jsonrpc":"2.0","id":"1","method":"session.bye","params":{"reason":"shutdown"}}"#;
+        let text =
+            r#"{"jsonrpc":"2.0","id":"1","method":"session.bye","params":{"reason":"shutdown"}}"#;
         let parsed = WireMessage::parse(text).expect("parse");
         match &parsed {
             WireMessage::Request { id, method, params } => {
@@ -514,6 +518,7 @@ mod tests {
                 description: None,
                 input_schema: json!({ "type": "object" }),
             }],
+            config_id: None,
             host_id: None,
             pid: None,
             resources: None,

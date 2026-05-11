@@ -15,10 +15,7 @@ pub enum ConfigLoadError {
     NotFound(PathBuf),
 
     #[error("failed to read config file '{path}': {source}")]
-    ReadError {
-        path: PathBuf,
-        source: io::Error,
-    },
+    ReadError { path: PathBuf, source: io::Error },
 
     #[error("failed to parse YAML config '{path}': {source}")]
     ParseError {

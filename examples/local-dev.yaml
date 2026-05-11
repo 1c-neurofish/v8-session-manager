@@ -26,3 +26,10 @@ mcp:
 
   metrics:
     bind_address: ""
+
+# Кеш переживает рестарт менеджера; нужен для MCP-харнесов, которые
+# нестабильно реагируют на notifications/tools/list_changed (например Claude Code).
+tools_cache:
+  enabled: true              # default true; false ⇒ откат к ADR-0034 (live-only)
+  cache_life_period: 5d      # humantime: 5d, 12h, 30m
+  # storage_path: tools_cache.json   # относительный — от workPath; по умолчанию ${workPath}/tools_cache.json

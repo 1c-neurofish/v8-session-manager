@@ -19,4 +19,5 @@ pub mod notify;
 pub mod protocol;
 pub mod registry;
 pub mod router;
+pub mod tools_cache;
 pub mod transport;

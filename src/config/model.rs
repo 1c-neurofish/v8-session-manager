@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +17,12 @@ pub struct AppConfig {
     /// MCP transport configuration (HTTP server + WS session manager).
     #[serde(default)]
     pub mcp: McpConfig,
+
+    /// Persistent tools-cache (ADR-0035). Кеш переживает рестарт менеджера;
+    /// нужен для MCP-харнесов, которые нестабильно реагируют на
+    /// `notifications/tools/list_changed` (например Claude Code).
+    #[serde(default)]
+    pub tools_cache: ToolsCacheConfig,
 }
 
 /// MCP runtime configuration.
@@ -210,4 +217,29 @@ const fn default_mcp_session_manager_ws_ping_interval_ms() -> u64 {
 
 const fn default_mcp_session_manager_ws_ping_timeout_ms() -> u64 {
     30_000
+}
+
+/// Persistent tools-cache configuration (ADR-0035).
+///
+/// `enabled: false` ⇒ кеш в no-op режиме (откат к ADR-0034 live-only).
+/// `cache_life_period` парсится через humantime (`5d`, `12h`, `30m`).
+/// `storage_path: None` ⇒ `${workPath}/tools_cache.json`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct ToolsCacheConfig {
+    pub enabled: bool,
+    #[serde(with = "humantime_serde")]
+    pub cache_life_period: Duration,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_path: Option<PathBuf>,
+}
+
+impl Default for ToolsCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            cache_life_period: Duration::from_secs(5 * 24 * 60 * 60),
+            storage_path: None,
+        }
+    }
 }

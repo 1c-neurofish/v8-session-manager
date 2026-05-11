@@ -231,6 +231,7 @@ mod tests {
             infobase_name: "test_db".to_owned(),
             ib_session_number: 1,
             tools: Vec::new(),
+            config_id: None,
             host_id: None,
             pid: None,
             resources: None,
@@ -251,7 +252,8 @@ mod tests {
         let session_id_clone = session_id.clone();
         let lifecycle_clone = Arc::clone(&lifecycle);
         let conn_clone = Arc::clone(&conn);
-        let task = tokio::spawn(async move { lifecycle_clone.shutdown_session(&session_id_clone).await });
+        let task =
+            tokio::spawn(async move { lifecycle_clone.shutdown_session(&session_id_clone).await });
 
         let outbound = tokio::time::timeout(Duration::from_secs(2), rx.recv())
             .await
@@ -275,7 +277,8 @@ mod tests {
 
         let session_id_clone = session_id.clone();
         let lifecycle_clone = Arc::clone(&lifecycle);
-        let task = tokio::spawn(async move { lifecycle_clone.shutdown_session(&session_id_clone).await });
+        let task =
+            tokio::spawn(async move { lifecycle_clone.shutdown_session(&session_id_clone).await });
 
         let _outbound = tokio::time::timeout(Duration::from_secs(2), rx.recv())
             .await
@@ -326,6 +329,7 @@ mod tests {
             infobase_name: "test_db".to_owned(),
             ib_session_number: 1,
             tools: Vec::new(),
+            config_id: None,
             host_id: None,
             pid: None,
             resources: None,
@@ -357,7 +361,10 @@ mod tests {
         }
 
         sweep_task.await.unwrap();
-        assert!(registry.get(&uid).is_none(), "idle session should be reaped");
+        assert!(
+            registry.get(&uid).is_none(),
+            "idle session should be reaped"
+        );
     }
 
     #[tokio::test]

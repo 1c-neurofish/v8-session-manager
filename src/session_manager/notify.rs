@@ -140,6 +140,7 @@ mod tests {
                 description: None,
                 input_schema: json!({}),
             }],
+            config_id: None,
             host_id: None,
             pid: None,
             resources: None,

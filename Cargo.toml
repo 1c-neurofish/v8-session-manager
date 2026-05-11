@@ -3,6 +3,10 @@ name = "v8-session-manager"
 version = "0.3.0"
 edition = "2021"
 
+[lib]
+name = "v8_session_manager"
+path = "src/lib.rs"
+
 [[bin]]
 name = "v8-session-manager"
 path = "src/main.rs"
@@ -28,9 +32,12 @@ rmcp = { version = "1.2.0", default-features = false, features = ["client", "mac
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = "0.7"
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect"] }
+tempfile = "3"
+humantime-serde = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
+tempfile = "3"
 
 [profile.release]
 opt-level = "z"
