@@ -6,7 +6,10 @@ use clap::Parser;
 /// и MCP HTTP server (по умолчанию `:4001/mcp`), которые делят один и тот же
 /// `Arc<SessionRegistry>`.
 #[derive(Debug, Parser)]
-#[command(name = "v8-session-manager", about = "1С client session manager (WS + MCP HTTP)")]
+#[command(
+    name = "v8-session-manager",
+    about = "1С client session manager (WS + MCP HTTP)"
+)]
 pub struct Cli {
     /// Path to YAML config file. Defaults to ./v8project.yaml.
     #[arg(long, env = "V8SM_CONFIG")]

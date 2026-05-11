@@ -82,11 +82,23 @@
 
     "session.register.params": {
       "type": "object",
-      "required": ["client_uid", "kind", "version", "tools"],
+      "required": [
+        "client_uid",
+        "kind",
+        "version",
+        "infobase_name",
+        "ib_session_number",
+        "tools"
+      ],
       "properties": {
         "client_uid": { "type": "string", "minLength": 1 },
         "kind": { "type": "string", "minLength": 1 },
         "version": { "type": "string" },
+        "infobase_name": { "type": "string", "minLength": 1 },
+        "ib_session_number": { "type": "integer", "minimum": 0 },
+        "host_id": { "type": "string", "minLength": 1 },
+        "pid": { "type": "integer", "minimum": 0 },
+        "config_id": { "type": "string", "minLength": 1 },
         "tools": {
           "type": "array",
           "items": { "$ref": "#/$defs/tool-descriptor" }

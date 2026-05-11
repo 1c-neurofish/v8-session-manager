@@ -44,6 +44,9 @@ pub struct SessionListItem {
     /// (например, v8-runner) как идентификатор сессии.
     pub session_id: String,
     pub kind: String,
+    /// Идентификатор конфигурации клиента (ADR-0035). `kind` если клиент
+    /// не передал явный `config_id` в `session.register`.
+    pub config_id: String,
     pub version: String,
     /// Имя информационной базы 1С (naming v2 от 2026-05-09).
     pub infobase_name: String,
@@ -81,6 +84,7 @@ pub fn list(registry: &Arc<SessionRegistry>) -> SessionListResult {
             inflight: rec.dispatcher.inflight(),
             session_id: rec.session_id,
             kind: rec.kind,
+            config_id: rec.config_id,
             version: rec.version,
             infobase_name: rec.infobase_name,
             ib_session_number: rec.ib_session_number,
@@ -117,6 +121,7 @@ mod tests {
                 description: None,
                 input_schema: json!({}),
             }],
+            config_id: None,
             host_id: None,
             pid: None,
             resources: None,

@@ -624,6 +624,7 @@ mod tests {
                     description: None,
                     input_schema: json!({"type": "object"}),
                 }],
+                config_id: None,
                 host_id: None,
                 pid: None,
                 resources: None,

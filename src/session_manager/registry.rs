@@ -31,6 +31,7 @@ use tokio::sync::Notify;
 use crate::session_manager::connection::ConnectionHandle;
 use crate::session_manager::dispatcher::SessionDispatcher;
 use crate::session_manager::protocol::{SessionRegisterParams, ToolDescriptor};
+use crate::session_manager::tools_cache::ToolsCacheStore;
 
 /// Состояние записи сессии.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +48,10 @@ pub enum SessionState {
 pub struct SessionRecord {
     pub session_id: String,
     pub kind: String,
+    /// Идентификатор конфигурации клиента (ADR-0035). Если клиент не
+    /// передал `config_id`, заполняется значением `kind`. Используется как
+    /// ключ адресации в `ToolsCacheStore` и в `session_list`.
+    pub config_id: String,
     pub version: String,
     /// Имя информационной базы 1С (naming v2 от 2026-05-09). Берётся из
     /// `session.register.infobase_name`; обновляется при soft reconnect.
@@ -112,12 +117,32 @@ pub struct SessionRegistry {
     session_changed: Notify,
     /// Глобальный монотонный счётчик для `connection_generation`.
     next_generation: AtomicU64,
+    /// Persistent кеш проксированных tools (ADR-0035). `None` ⇒ кеш не
+    /// настроен (e.g. в тестах) или отключён через конфиг — поведение
+    /// откатывается к ADR-0034 (live-only).
+    tools_cache: RwLock<Option<Arc<ToolsCacheStore>>>,
 }
 
 #[allow(dead_code)]
 impl SessionRegistry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Привязать persistent tools cache (ADR-0035). Может быть вызвано один
+    /// раз на стадии bootstrap (`serve_session_manager`). До привязки
+    /// register/update_tools работают как ADR-0034 — без кеша.
+    pub fn attach_tools_cache(&self, cache: Arc<ToolsCacheStore>) {
+        let mut guard = self.tools_cache.write().expect("tools_cache slot poisoned");
+        *guard = Some(cache);
+    }
+
+    /// Текущий tools cache (для тестов / диагностики).
+    pub fn tools_cache(&self) -> Option<Arc<ToolsCacheStore>> {
+        self.tools_cache
+            .read()
+            .expect("tools_cache slot poisoned")
+            .clone()
     }
 
     /// Текущая эпоха публичного набора tools (увеличивается при изменении).
@@ -134,6 +159,13 @@ impl SessionRegistry {
     fn mark_tools_changed(&self) {
         self.tools_epoch.fetch_add(1, Ordering::Release);
         self.tools_changed.notify_one();
+    }
+
+    /// Публичная версия `mark_tools_changed` для использования из внешних
+    /// модулей (ADR-0035: `ToolsCacheStore` через `notifier_hook` дёргает
+    /// её после mutating операций над кешем).
+    pub fn mark_tools_changed_external(&self) {
+        self.mark_tools_changed();
     }
 
     /// Сигнал «состав реестра изменился».
@@ -163,6 +195,15 @@ impl SessionRegistry {
         now: Instant,
         connection: Option<Arc<ConnectionHandle>>,
     ) -> Result<RegisterOutcome, RegisterError> {
+        // ADR-0035: резолвим config_id ДО взятия write-lock — нужен для
+        // cache upsert после успешной регистрации.
+        let resolved_config_id = params
+            .config_id
+            .clone()
+            .unwrap_or_else(|| params.kind.clone());
+        let cache_kind = params.kind.clone();
+        let cache_tools = params.tools.clone();
+
         let mut guard = self.inner.write().expect("registry poisoned");
         if let Some(existing) = guard.get_mut(&params.client_uid) {
             return match existing.state {
@@ -174,6 +215,7 @@ impl SessionRegistry {
                     existing.tools = params.tools;
                     existing.version = params.version;
                     existing.kind = params.kind;
+                    existing.config_id = resolved_config_id.clone();
                     existing.infobase_name = params.infobase_name;
                     existing.ib_session_number = params.ib_session_number;
                     existing.connection = connection;
@@ -189,6 +231,7 @@ impl SessionRegistry {
                     drop(guard);
                     self.mark_tools_changed();
                     self.mark_session_changed();
+                    self.upsert_tools_cache(cache_kind, resolved_config_id, cache_tools);
                     Ok(RegisterOutcome::Reconnected)
                 }
             };
@@ -199,6 +242,7 @@ impl SessionRegistry {
         let record = SessionRecord {
             session_id: params.client_uid.clone(),
             kind: params.kind,
+            config_id: resolved_config_id.clone(),
             version: params.version,
             infobase_name: params.infobase_name,
             ib_session_number: params.ib_session_number,
@@ -217,7 +261,14 @@ impl SessionRegistry {
         drop(guard);
         self.mark_tools_changed();
         self.mark_session_changed();
+        self.upsert_tools_cache(cache_kind, resolved_config_id, cache_tools);
         Ok(RegisterOutcome::Created)
+    }
+
+    fn upsert_tools_cache(&self, kind: String, config_id: String, tools: Vec<ToolDescriptor>) {
+        if let Some(cache) = self.tools_cache() {
+            cache.upsert(kind, config_id, tools);
+        }
     }
 
     /// Перевести запись в `Disconnected`. No‑op, если запись отсутствует или уже `Disconnected`.
@@ -342,25 +393,29 @@ impl SessionRegistry {
     /// (например, Vanessa MCPVA → закрытие → повторное открытие).
     /// Возвращает `true`, если сессия найдена (даже когда tools идентичны).
     pub fn update_tools(&self, session_id: &str, tools: Vec<ToolDescriptor>) -> bool {
+        // ADR-0035: tools_changed notification тоже обновляет persistent cache,
+        // чтобы кеш не отставал от live-сессии в пределах одной WS-сессии.
+        // Иначе после disconnect AI-агент будет «видеть» старый набор tools.
         let outcome = {
             let mut guard = self.inner.write().expect("registry poisoned");
             match guard.get_mut(session_id) {
                 Some(rec) => {
                     let same = rec.tools == tools;
                     if !same {
-                        rec.tools = tools;
+                        rec.tools = tools.clone();
                     }
-                    Some(same)
+                    Some((same, rec.kind.clone(), rec.config_id.clone()))
                 }
                 None => None,
             }
         };
         match outcome {
-            Some(false) => {
+            Some((false, kind, config_id)) => {
                 self.mark_tools_changed();
+                self.upsert_tools_cache(kind, config_id, tools);
                 true
             }
-            Some(true) => true,
+            Some((true, _, _)) => true,
             None => false,
         }
     }
@@ -435,6 +490,7 @@ mod tests {
                 description: None,
                 input_schema: json!({ "type": "object" }),
             }],
+            config_id: None,
             host_id: None,
             pid: None,
             resources: None,
@@ -603,8 +659,12 @@ mod tests {
         let stale_gen = reg.get("uid-1").unwrap().connection_generation;
         reg.mark_disconnected("uid-1", t0 + Duration::from_secs(1));
         // Soft reconnect — поднимает поколение.
-        reg.register(params("uid-1", "client", "echo"), t0 + Duration::from_secs(2), None)
-            .unwrap();
+        reg.register(
+            params("uid-1", "client", "echo"),
+            t0 + Duration::from_secs(2),
+            None,
+        )
+        .unwrap();
         let new_gen = reg.get("uid-1").unwrap().connection_generation;
         assert!(new_gen > stale_gen);
         // Старый shutdown_session с stale gen НЕ должен удалить новую запись.
@@ -657,11 +717,7 @@ mod tests {
         ));
         assert_eq!(reg.get("uid-1").unwrap().state, SessionState::Active);
         // А свежий WS-task со своим поколением — переводит.
-        assert!(reg.mark_disconnected_if_generation(
-            "uid-1",
-            new_gen,
-            t0 + Duration::from_secs(4),
-        ));
+        assert!(reg.mark_disconnected_if_generation("uid-1", new_gen, t0 + Duration::from_secs(4),));
         assert_eq!(reg.get("uid-1").unwrap().state, SessionState::Disconnected);
     }
 
