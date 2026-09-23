@@ -399,6 +399,17 @@ enum ConnectionError {
     Bye,
 }
 
+const MAX_LOGGED_ID_LENGTH: usize = 1024;
+
+fn unknown_response_id_summary(id: &Id) -> (&'static str, usize) {
+    let (id_type, length_bytes) = match id {
+        Id::String(value) => ("string", value.len()),
+        Id::Number(value) => ("number", value.to_string().len()),
+        Id::Null => ("null", 4),
+    };
+    (id_type, length_bytes.min(MAX_LOGGED_ID_LENGTH))
+}
+
 async fn dispatch(
     state: &AppState,
     peer: &ConnectionContext,
@@ -417,7 +428,11 @@ async fn dispatch(
         WireMessage::Response { id, result } => {
             // ADR-0023: ответы от клиента маршрутизируются в pending‑таблицу outbound‑вызовов.
             if !connection.complete_response(id.clone(), result) {
-                warn!(?id, "session-manager: response with unknown id; dropped");
+                let (id_type, id_length_bytes) = unknown_response_id_summary(&id);
+                warn!(
+                    id_type,
+                    id_length_bytes, "session-manager: response with unknown id; dropped"
+                );
             }
             Ok(())
         }
@@ -633,6 +648,17 @@ mod tests {
     use crate::session_manager::protocol::ToolDescriptor;
     use serde_json::{json, Value};
     use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
+
+    #[test]
+    fn unknown_response_id_summary_omits_content_and_caps_length() {
+        let untrusted = "secret\nauthorization: bearer token".repeat(100);
+        assert_eq!(
+            unknown_response_id_summary(&Id::String(untrusted)),
+            ("string", MAX_LOGGED_ID_LENGTH)
+        );
+        assert_eq!(unknown_response_id_summary(&Id::Number(-42)), ("number", 3));
+        assert_eq!(unknown_response_id_summary(&Id::Null), ("null", 4));
+    }
 
     fn test_config() -> McpSessionManagerConfig {
         McpSessionManagerConfig {
