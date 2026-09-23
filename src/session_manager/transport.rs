@@ -34,6 +34,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::model::McpSessionManagerConfig;
 use crate::session_manager::connection::ConnectionHandle;
+use crate::session_manager::masking::MaskingGate;
 use crate::session_manager::protocol::{
     error_codes, methods, EmptyResult, Id, JsonRpcError, SessionRegisterParams,
     SessionRegisterResult, SessionToolsChangedParams, WireMessage,
@@ -60,6 +61,7 @@ struct AppState {
     registry: Arc<SessionRegistry>,
     config: Arc<McpSessionManagerConfig>,
     server_version: Arc<String>,
+    masking_gate: Option<Arc<MaskingGate>>,
 }
 
 /// Поднимает WS-сервер на `config.bind_address` + `config.path` и фоновый sweeper.
@@ -71,13 +73,32 @@ pub async fn start(
     config: McpSessionManagerConfig,
     server_version: impl Into<String>,
 ) -> std::io::Result<RunningTransport> {
+    start_inner(registry, config, server_version.into(), None).await
+}
+
+pub async fn start_with_masking(
+    registry: Arc<SessionRegistry>,
+    config: McpSessionManagerConfig,
+    server_version: impl Into<String>,
+    masking_gate: Arc<MaskingGate>,
+) -> std::io::Result<RunningTransport> {
+    start_inner(registry, config, server_version.into(), Some(masking_gate)).await
+}
+
+async fn start_inner(
+    registry: Arc<SessionRegistry>,
+    config: McpSessionManagerConfig,
+    server_version: String,
+    masking_gate: Option<Arc<MaskingGate>>,
+) -> std::io::Result<RunningTransport> {
     let listener = TcpListener::bind(&config.bind_address).await?;
     let local_addr = listener.local_addr()?;
 
     let state = AppState {
         registry: Arc::clone(&registry),
         config: Arc::new(config.clone()),
-        server_version: Arc::new(server_version.into()),
+        server_version: Arc::new(server_version),
+        masking_gate,
     };
 
     let app = Router::new()
@@ -325,7 +346,7 @@ async fn run_connection(
 
         match msg {
             Message::Text(text) => {
-                debug!(text_len = text.len(), preview = %text.chars().take(160).collect::<String>(), "ws text frame");
+                debug!(text_len = text.len(), "ws text frame");
                 match WireMessage::parse(&text) {
                     Ok(wire) => {
                         if let Err(err) = dispatch(&state, &peer, &connection, wire, &tx).await {
@@ -429,7 +450,7 @@ async fn handle_request(
                 );
                 return Ok(());
             }
-            let parsed: SessionRegisterParams = match serde_json::from_value(params) {
+            let mut parsed: SessionRegisterParams = match serde_json::from_value(params) {
                 Ok(p) => p,
                 Err(err) => {
                     send_error(tx, id, error_codes::INVALID_PARAMS, format!("{err}"));
@@ -438,10 +459,36 @@ async fn handle_request(
             };
             let now = Instant::now();
             let client_uid = parsed.client_uid.clone();
-            match state
-                .registry
-                .register(parsed, now, Some(Arc::clone(connection)))
+            let trusted_route = match state.masking_gate.as_ref() {
+                Some(gate) => gate.validate_registration(&parsed),
+                None => Ok(None),
+            };
+            let trusted_route = match trusted_route {
+                Ok(route) => route,
+                Err(_) => {
+                    send_error(
+                        tx,
+                        id,
+                        error_codes::SESSION_REGISTRATION_UNAUTHENTICATED,
+                        "session registration is not allowed".to_owned(),
+                    );
+                    return Ok(());
+                }
+            };
+            if trusted_route.is_none()
+                && state
+                    .masking_gate
+                    .as_ref()
+                    .is_none_or(|gate| !gate.is_enabled())
             {
+                parsed.tools.retain(|tool| tool.visibility.is_public());
+            }
+            match state.registry.register_trusted(
+                parsed,
+                now,
+                Some(Arc::clone(connection)),
+                trusted_route,
+            ) {
                 Ok(outcome) => {
                     // BLOCKER-2: фиксируем поколение коннекта для этого peer'а,
                     // чтобы последующий disconnect/bye мог использовать
@@ -542,6 +589,24 @@ async fn handle_notification(
                     return;
                 }
             };
+            let Some(record) = state.registry.get(&session_id) else {
+                return;
+            };
+            let allowed = state
+                .masking_gate
+                .as_ref()
+                .is_some_and(|gate| gate.validate_tool_update(&record, &parsed.tools));
+            if !allowed
+                && parsed.tools.iter().any(|tool| {
+                    tool.visibility == crate::session_manager::protocol::ToolVisibility::Internal
+                })
+            {
+                warn!(
+                    session_id = %session_id,
+                    "session.tools_changed attempted an untrusted internal tool update"
+                );
+                return;
+            }
             state.registry.update_tools(&session_id, parsed.tools);
         }
         other => {
@@ -619,10 +684,12 @@ mod tests {
                 version: "1.0".to_owned(),
                 infobase_name: "test_db".to_owned(),
                 ib_session_number: 1,
+                database_instance_id: None,
                 tools: vec![ToolDescriptor {
                     name: tool.to_owned(),
                     description: None,
                     input_schema: json!({"type": "object"}),
+                    visibility: Default::default(),
                 }],
                 config_id: None,
                 host_id: None,
@@ -677,6 +744,28 @@ mod tests {
         }
         assert_eq!(registry.len(), 1);
 
+        ws.close(None).await.ok();
+        running.shutdown();
+    }
+
+    #[tokio::test]
+    async fn internal_tool_is_stripped_when_masking_gate_is_not_enabled() {
+        let (registry, running, url) = boot().await;
+        let mut ws = connect(&url).await;
+        let mut request: Value =
+            serde_json::from_str(&register_text("uid-internal", "server", "hidden")).unwrap();
+        request["params"]["tools"][0]["visibility"] = Value::String("internal".to_owned());
+        ws.send(WsMessage::Text(request.to_string().into()))
+            .await
+            .unwrap();
+
+        let response = WireMessage::parse(&next_text(&mut ws).await).unwrap();
+        match response {
+            WireMessage::Response { result, .. } => assert!(result.is_ok()),
+            other => panic!("unexpected: {other:?}"),
+        }
+        let record = registry.get("uid-internal").unwrap();
+        assert!(record.tools.is_empty());
         ws.close(None).await.ok();
         running.shutdown();
     }

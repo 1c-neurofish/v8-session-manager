@@ -76,10 +76,10 @@ AI-агенту (Claude Code, Cursor, любой MCP-клиент) удобно 
   опубликованные тулы (ADR-0022).
 - **Idle-sweeper.** Сессии без активности дольше `idle_timeout_secs`
   чистятся автоматически.
-- **Дедупликация тулов.** Совпадающие `(name, schema_hash)` от
-  разных клиентов сводятся в один публичный тул (независимо от `kind`);
-  конфликты по схеме скрываются с предупреждением (ADR-0019, обновлено
-  правкой 2026-05-09 — `kind` исключён из ключа дедупликации).
+- **Безопасная маршрутизация тулов.** Один активный кандидат выбирается
+  автоматически. При двух и более кандидатах менеджер требует явный
+  `session_id`; round-robin не используется. Разные схемы одного имени
+  публикуются как `oneOf`, привязанный к допустимым `session_id`.
 
 > Удалены (по сравнению с предыдущей итерацией) `session_call`,
 > `session_kill`, `session_spawn`, `session_swap` — управление жизненным
@@ -133,7 +133,7 @@ curl -sS -X POST http://127.0.0.1:4001/mcp \
 
 После того как 1С-клиент с `mcpMode=ws` подключится к `:4000/sessions`,
 повторный `tools/list` покажет встроенный `session_list` плюс
-проксированные тулы клиентов с префиксом `<prefix>__<tool>`.
+проксированные тулы клиентов под голыми именами `<tool_name>`.
 
 ## Раскладка конфигов в репозитории
 
@@ -203,14 +203,21 @@ journalctl -u v8-session-manager -f
 
 - В `tools/list` MCP HTTP проксированный тул выходит под голым именем
   `<tool_name>` — без какого-либо префикса. Это `published_name == tool_name`.
-- Дедупликация ведётся по паре `(tool_name, schema_hash)`. `kind` в ключ
-  не входит: две сессии разных `kind` с одинаковым `tool_name` и одинаковой
-  `input_schema` сводятся в один published slot, round-robin маршрутизирует
-  вызовы между ними.
-- Если две сессии регистрируют один и тот же `tool_name` с разными схемами,
-  слот скрывается из `tools/list` (hidden group). Прямого вызова такого
-  имени достаточно вернуть `invalid_params`; адресация — внешняя
-  (через будущий универсальный `session.call`, см. ADR-0034).
+- Группировка ведётся по `tool_name`; `kind` в ключ не входит. В схему
+  каждого проксированного tool менеджер добавляет зарезервированный строковый
+  аргумент `session_id` и удаляет его перед отправкой вызова в WS-сессию.
+- При единственной Active-сессии `session_id` опционален: старые вызовы
+  продолжают работать. При двух и более Active-сессиях он обязателен;
+  вызов без него возвращает `invalid_params`, поэтому DEV-вызов не может
+  случайно уйти в production через round-robin.
+- Явный `session_id` принимается только если запись существует, Active и
+  публикует вызываемый tool. Неизвестная, отключённая или несовместимая
+  сессия даёт ошибку без fallback на другого кандидата.
+- Разные `input_schema` одного `tool_name` больше не скрывают tool. В
+  `tools/list` публикуется `oneOf`: каждая ветвь содержит исходную схему и
+  `session_id.enum` с сессиями, зарегистрировавшими именно эту схему.
+- `session_id` — зарезервированное менеджером имя параметра; клиентский tool
+  не должен использовать его как собственный бизнес-аргумент.
 
 ### Обязательные поля `session.register`
 
@@ -221,6 +228,10 @@ journalctl -u v8-session-manager -f
 |------|-----|----------|
 | `infobase_name` | string, непустая | Имя информационной базы 1С (как видит её клиент). Используется для идентификации источника tool-вызова в `session_list` и в логах менеджера. |
 | `ib_session_number` | u32 | Внутренний номер сеанса 1С — `НомерСеанса()` платформы. На soft-reconnect перетирается актуальным значением: после переподключения номер сеанса в 1С может смениться. |
+
+Опциональное для legacy-сессий поле `database_instance_id` содержит
+deployment-provisioned UUID установки базы. Для шести tools под masking gate
+оно обязательно; имя базы и `session_id` identity базы не заменяют.
 
 Регистрация без этих полей или с пустым `infobase_name` отклоняется
 с JSON-RPC ошибкой `-32602` (`InvalidParams`).
@@ -264,6 +275,18 @@ Tool `session_list` (единственный встроенный tool мене
 | `mcp.http.auth_token` | Bearer-токен для MCP HTTP (если задан) | `null` |
 | `mcp.execution.shutdown_grace_period_secs` | Grace на graceful shutdown | `30` |
 | `mcp.metrics.bind_address` | Prometheus `/metrics` (пусто = выкл.) | `127.0.0.1:9100` |
+| `masking.enabled` | Включить fail-closed внешний masking gate | `false` |
+| `masking.socket_path` | UDS внутреннего API masking service | `/run/1c-masking/internal.sock` |
+| `masking.broker_public_key_path` | Ed25519 PEM public key trusted broker-а | `/etc/v8-session-manager/broker-ed25519.pub.pem` |
+
+При `masking.enabled: true` manager требует проверенный short-lived JWT/JWS
+диалога, точную deployment-привязку `database_instance_id → database_id/route`
+и успешно завершённые preflight/finalize. Любая ошибка закрывает вызов до выдачи
+результата; raw fallback отсутствует. Agent-facing параметры маскирования,
+history IDs и controls не добавляются.
+
+Привязка базы предполагает доверенный VPN/LAN/tunnel между 1С и WS endpoint;
+сам `session.register` отдельной криптографической аутентификации не выполняет.
 
 Источник правды: `src/config/model.rs`.
 

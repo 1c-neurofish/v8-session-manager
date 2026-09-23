@@ -33,6 +33,13 @@ use crate::session_manager::dispatcher::SessionDispatcher;
 use crate::session_manager::protocol::{SessionRegisterParams, ToolDescriptor};
 use crate::session_manager::tools_cache::ToolsCacheStore;
 
+/// Operational identity accepted at the trusted WS registration boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustedRouteContext {
+    pub database_instance_id: uuid::Uuid,
+    pub database_id: uuid::Uuid,
+}
+
 /// Состояние записи сессии.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionState {
@@ -60,6 +67,9 @@ pub struct SessionRecord {
     /// Обновляется при soft reconnect — фактический номер в новом сеансе
     /// 1С может отличаться от номера предыдущего сеанса.
     pub ib_session_number: u32,
+    /// Непрозрачная identity установки базы из доверенной регистрации.
+    pub database_instance_id: Option<String>,
+    pub trusted_route: Option<TrustedRouteContext>,
     pub tools: Vec<ToolDescriptor>,
     pub state: SessionState,
     /// Идентификатор хоста, на котором работает процесс. Берётся из поля
@@ -195,6 +205,16 @@ impl SessionRegistry {
         now: Instant,
         connection: Option<Arc<ConnectionHandle>>,
     ) -> Result<RegisterOutcome, RegisterError> {
+        self.register_trusted(params, now, connection, None)
+    }
+
+    pub fn register_trusted(
+        &self,
+        params: SessionRegisterParams,
+        now: Instant,
+        connection: Option<Arc<ConnectionHandle>>,
+        trusted_route: Option<TrustedRouteContext>,
+    ) -> Result<RegisterOutcome, RegisterError> {
         // ADR-0035: резолвим config_id ДО взятия write-lock — нужен для
         // cache upsert после успешной регистрации.
         let resolved_config_id = params
@@ -218,6 +238,8 @@ impl SessionRegistry {
                     existing.config_id = resolved_config_id.clone();
                     existing.infobase_name = params.infobase_name;
                     existing.ib_session_number = params.ib_session_number;
+                    existing.database_instance_id = params.database_instance_id;
+                    existing.trusted_route = trusted_route;
                     existing.connection = connection;
                     existing.connection_generation = new_gen;
                     if let Some(hid) = params.host_id {
@@ -246,6 +268,8 @@ impl SessionRegistry {
             version: params.version,
             infobase_name: params.infobase_name,
             ib_session_number: params.ib_session_number,
+            database_instance_id: params.database_instance_id,
+            trusted_route,
             tools: params.tools,
             state: SessionState::Active,
             host_id: params.host_id.unwrap_or_else(|| "unknown".to_owned()),
@@ -485,10 +509,12 @@ mod tests {
             version: "1.0.0".to_owned(),
             infobase_name: "test_db".to_owned(),
             ib_session_number: 1,
+            database_instance_id: None,
             tools: vec![ToolDescriptor {
                 name: tool_name.to_owned(),
                 description: None,
                 input_schema: json!({ "type": "object" }),
+                visibility: Default::default(),
             }],
             config_id: None,
             host_id: None,
@@ -732,11 +758,13 @@ mod tests {
                 name: "a".to_owned(),
                 description: None,
                 input_schema: json!({}),
+                visibility: Default::default(),
             },
             ToolDescriptor {
                 name: "b".to_owned(),
                 description: Some("desc".to_owned()),
                 input_schema: json!({}),
+                visibility: Default::default(),
             },
         ];
         assert!(reg.update_tools("uid-1", new_tools.clone()));
@@ -754,6 +782,7 @@ mod tests {
             name: "x".to_owned(),
             description: None,
             input_schema: json!({}),
+            visibility: Default::default(),
         }];
         // первый update — должен инкрементировать epoch
         let epoch_before_first = reg.tools_epoch();
@@ -771,6 +800,7 @@ mod tests {
             name: "y".to_owned(),
             description: None,
             input_schema: json!({}),
+            visibility: Default::default(),
         }];
         assert!(reg.update_tools("uid-1", other_tools));
         assert!(reg.tools_epoch() > epoch_after_second);

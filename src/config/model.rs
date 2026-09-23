@@ -23,6 +23,74 @@ pub struct AppConfig {
     /// `notifications/tools/list_changed` (например Claude Code).
     #[serde(default)]
     pub tools_cache: ToolsCacheConfig,
+
+    /// Fail-closed gate внешнего сервиса маскирования MCP-результатов.
+    #[serde(default)]
+    pub masking: MaskingConfig,
+}
+
+/// Конфигурация внутреннего UDS-клиента сервиса маскирования.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default, rename_all = "snake_case")]
+pub struct MaskingConfig {
+    /// Gate активируется только явно; без полной identity-конфигурации запуск
+    /// с `enabled=true` отклоняется валидатором.
+    pub enabled: bool,
+    pub socket_path: PathBuf,
+    pub preflight_timeout_ms: u64,
+    pub finalize_timeout_ms: u64,
+    pub feed_chunk_timeout_ms: u64,
+    pub feed_activate_timeout_ms: u64,
+    /// PEM public key доверенного broker-а для проверки JWT/JWS assertion.
+    pub broker_public_key_path: PathBuf,
+    pub broker_issuer: String,
+    pub broker_audience: String,
+    pub broker_max_assertion_ttl_secs: u64,
+    pub conversation_assertion_header: String,
+    /// Набор tools, которые обязаны пройти preflight/finalize. Неизвестное
+    /// сервису имя получит `TOOL_PENDING_REVIEW`, а не raw fallback.
+    pub managed_tools: Vec<String>,
+    pub identity_bindings: Vec<MaskingIdentityBinding>,
+}
+
+impl Default for MaskingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            socket_path: PathBuf::from("/run/1c-masking/internal.sock"),
+            preflight_timeout_ms: 3_000,
+            finalize_timeout_ms: 15_000,
+            feed_chunk_timeout_ms: 10_000,
+            feed_activate_timeout_ms: 60_000,
+            broker_public_key_path: PathBuf::from("/etc/v8-session-manager/broker-ed25519.pub.pem"),
+            broker_issuer: "trusted-mcp-broker".to_owned(),
+            broker_audience: "v8-session-manager".to_owned(),
+            broker_max_assertion_ttl_secs: 300,
+            conversation_assertion_header: "x-v8-conversation-assertion".to_owned(),
+            managed_tools: vec![
+                "execute_query".to_owned(),
+                "find_references_to_object".to_owned(),
+                "get_object_by_link".to_owned(),
+                "get_metadata".to_owned(),
+                "get_access_rights".to_owned(),
+                "get_link_of_object".to_owned(),
+            ],
+            identity_bindings: Vec::new(),
+        }
+    }
+}
+
+/// Deployment-owned привязка identity базы к ожидаемому WS route.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MaskingIdentityBinding {
+    pub database_instance_id: String,
+    pub database_id: String,
+    pub expected_kind: String,
+    pub expected_config_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_host_id: Option<String>,
+    pub allowed_internal_tools: Vec<String>,
 }
 
 /// MCP runtime configuration.

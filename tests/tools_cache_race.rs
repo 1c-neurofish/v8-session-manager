@@ -33,6 +33,7 @@ fn td(name: &str) -> ToolDescriptor {
         name: name.to_owned(),
         description: Some(format!("desc for {name}")),
         input_schema: json!({"type": "object"}),
+        visibility: Default::default(),
     }
 }
 
@@ -43,6 +44,7 @@ fn register_params(uid: &str, kind: &str, tools: Vec<ToolDescriptor>) -> Session
         version: "1.0".to_owned(),
         infobase_name: "test_db".to_owned(),
         ib_session_number: 1,
+        database_instance_id: None,
         tools,
         config_id: None,
         host_id: None,
@@ -58,6 +60,7 @@ fn app_config(work_path: PathBuf) -> Arc<AppConfig> {
         work_path,
         mcp: McpConfig::default(),
         tools_cache: ToolsCacheConfig::default(),
+        masking: Default::default(),
     })
 }
 

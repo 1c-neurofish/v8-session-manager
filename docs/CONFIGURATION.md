@@ -46,6 +46,35 @@ mcp:
 
   metrics:
     bind_address: "127.0.0.1:9100"
+
+masking:
+  enabled: false
+  socket_path: /run/1c-masking/internal.sock
+  preflight_timeout_ms: 3000
+  finalize_timeout_ms: 15000
+  feed_chunk_timeout_ms: 10000
+  feed_activate_timeout_ms: 60000
+  broker_public_key_path: /etc/v8-session-manager/broker-ed25519.pub.pem
+  broker_issuer: trusted-mcp-broker
+  broker_audience: v8-session-manager
+  broker_max_assertion_ttl_secs: 300
+  conversation_assertion_header: x-v8-conversation-assertion
+  managed_tools:
+    - execute_query
+    - find_references_to_object
+    - get_object_by_link
+    - get_metadata
+    - get_access_rights
+    - get_link_of_object
+  identity_bindings:
+    - database_instance_id: 11111111-1111-4111-8111-111111111111
+      database_id: 22222222-2222-4222-8222-222222222222
+      expected_kind: server
+      expected_config_id: server
+      expected_host_id: onec-server-01
+      allowed_internal_tools:
+        - mcp_internal_masking_metadata_feed
+        - mcp_internal_masking_dictionary_feed
 ```
 
 ## Корневые ключи
@@ -99,6 +128,37 @@ Prometheus exporter.
 | Ключ | Тип | По умолчанию | Назначение |
 |------|-----|--------------|------------|
 | `bind_address` | string \| null | `127.0.0.1:9100` | Bind для Prometheus `/metrics`. Пустая строка или `null` — exporter отключён. |
+
+## Секция `masking`
+
+По умолчанию интеграция выключена. При `enabled: true` обязательны UDS сервиса,
+Ed25519 public key trusted broker-а и хотя бы одна deployment-owned identity
+binding. Manager принимает `conversation_id` только из JWT/JWS header, проверяя
+`iss`, `aud=v8-session-manager`, `iat`, `exp` и максимальный TTL. Tool arguments
+и MCP `_meta` источниками chat identity не являются.
+
+`managed_tools` должен содержать ровно шесть имён: `execute_query`,
+`find_references_to_object`, `get_object_by_link`, `get_metadata`,
+`get_access_rights`, `get_link_of_object`. Все шесть проходят preflight и
+finalize, поэтому masked history создаётся автоматически и для bypass tools.
+Первые три классифицируются сервисом как `data-mask`, последние три — как
+`metadata/non-data-bypass`.
+
+Каждая `identity_bindings` запись содержит `database_instance_id`, непрозрачный
+`database_id`, `expected_kind`, `expected_config_id` и опциональный
+`expected_host_id`; `allowed_internal_tools` должен содержать ровно два hidden
+feed tool. Несовпадение registration tuple или internal allowlist отклоняется
+до помещения сессии в registry и до dispatch в 1С.
+Эта привязка является operational mapping внутри принятой доверенной сетевой
+границы (VPN/LAN/tunnel): manager не выполняет отдельную криптографическую
+аутентификацию WS registration. Поэтому WS endpoint нельзя публиковать за
+пределами этой границы без отдельного transport-auth слоя.
+
+Timeout defaults: `preflight_timeout_ms=3000`, `finalize_timeout_ms=15000`.
+Feed chunk timeout — `feed_chunk_timeout_ms=10000`, atomic activation timeout —
+`feed_activate_timeout_ms=60000`.
+Finalize может один раз повторить только transport failure с тем же `call_id`.
+Masking response никогда не добавляет agent-facing receipt/history ID.
 
 ## CLI-флаги
 

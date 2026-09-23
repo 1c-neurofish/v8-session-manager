@@ -53,6 +53,7 @@ pub mod error_codes {
     pub const CLIENT_TIMEOUT: i64 = -32012;
     pub const SPAWN_TIMEOUT: i64 = -32013;
     pub const KIND_MISMATCH: i64 = -32014;
+    pub const SESSION_REGISTRATION_UNAUTHENTICATED: i64 = -32015;
     pub const TOOL_CANCELLED: i64 = -32800;
     pub const INVALID_REQUEST: i64 = -32600;
     pub const METHOD_NOT_FOUND: i64 = -32601;
@@ -230,6 +231,23 @@ pub struct ToolDescriptor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub input_schema: Value,
+    /// `internal` tools остаются в registry, но никогда не публикуются агенту.
+    #[serde(default, skip_serializing_if = "ToolVisibility::is_public")]
+    pub visibility: ToolVisibility,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolVisibility {
+    #[default]
+    Public,
+    Internal,
+}
+
+impl ToolVisibility {
+    pub fn is_public(&self) -> bool {
+        matches!(self, Self::Public)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -244,6 +262,10 @@ pub struct SessionRegisterParams {
     /// Внутренний номер сеанса 1С (`НомерСеанса()` платформы). BC-breaking:
     /// поле обязательно (см. [`Self::validate`]).
     pub ib_session_number: u32,
+    /// Deployment-provisioned UUID установки базы. Не является agent input
+    /// и используется только manager-side identity gate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database_instance_id: Option<String>,
     pub tools: Vec<ToolDescriptor>,
     /// Опциональный идентификатор конфигурации клиента (ADR‑0035).
     /// Если не задан, менеджер использует `config_id == kind`. Используется
@@ -513,10 +535,12 @@ mod tests {
             version: "1.0".to_owned(),
             infobase_name: "test_db".to_owned(),
             ib_session_number: 42,
+            database_instance_id: None,
             tools: vec![ToolDescriptor {
                 name: "echo".to_owned(),
                 description: None,
                 input_schema: json!({ "type": "object" }),
+                visibility: Default::default(),
             }],
             config_id: None,
             host_id: None,

@@ -10,12 +10,12 @@
 //!
 //! 1. Ждём admission permit. На этом этапе допускаются:
 //!    - `cancellation` → `CancelledWhileQueued`;
-//!    - `deadline` истёк → `TimedOutWhileQueued`;
+//!    - `deadline` истёк, если он задан → `TimedOutWhileQueued`;
 //!    - dispatcher переведён в Drained → `SessionGone`.
 //! 2. С permit'ом: `inflight += 1`, шлём через `ConnectionHandle::dispatch_request`
-//!    outbound `tool.call`. Ждём ответ до `deadline`. Если в течение ожидания
-//!    приходит `cancellation` — шлём `tool.cancel(id)` и **продолжаем ждать
-//!    terminal** (контракт §7.2 спеки и ADR‑0021/0024).
+//!    outbound `tool.call`. Ждём ответ до `deadline`, если он задан. Если в
+//!    течение ожидания приходит `cancellation` — шлём `tool.cancel(id)` и
+//!    **продолжаем ждать terminal** (контракт §7.2 спеки и ADR‑0021/0024).
 //! 3. После terminal — `inflight -= 1`, permit отпускается через `Drop`.
 
 use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
@@ -112,7 +112,7 @@ impl SessionDispatcher {
         self: &Arc<Self>,
         connection: Arc<ConnectionHandle>,
         params: ToolCallParams,
-        deadline: Instant,
+        deadline: Option<Instant>,
         cancellation: CancellationToken,
     ) -> Result<ToolCallResult, DispatcherError> {
         if self.is_drained() {
@@ -121,11 +121,19 @@ impl SessionDispatcher {
 
         // 1. ждём admission permit с учётом cancellation/deadline/drain.
         let admission = Arc::clone(&self.admission);
-        let permit = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => return Err(DispatcherError::CancelledWhileQueued),
-            _ = tokio::time::sleep_until(deadline) => return Err(DispatcherError::TimedOutWhileQueued),
-            permit = admission.acquire_owned() => permit,
+        let permit = if let Some(deadline) = deadline {
+            tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => return Err(DispatcherError::CancelledWhileQueued),
+                _ = tokio::time::sleep_until(deadline) => return Err(DispatcherError::TimedOutWhileQueued),
+                permit = admission.acquire_owned() => permit,
+            }
+        } else {
+            tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => return Err(DispatcherError::CancelledWhileQueued),
+                permit = admission.acquire_owned() => permit,
+            }
         };
         let _permit = permit.map_err(|_| DispatcherError::SessionGone)?;
 
@@ -148,36 +156,47 @@ impl SessionDispatcher {
         // 3. ждём terminal с одновременным наблюдением cancellation/deadline.
         let mut cancel_sent = false;
         let outcome = loop {
-            tokio::select! {
-                biased;
-                resp = &mut rx => match resp {
-                    Ok(Ok(value)) => break Ok(value),
-                    Ok(Err(jsonrpc_err)) => {
-                        if jsonrpc_err.code == error_codes::TOOL_CANCELLED {
-                            break Err(DispatcherError::Cancelled);
+            if let Some(deadline) = deadline {
+                tokio::select! {
+                    biased;
+                    resp = &mut rx => match resp {
+                        Ok(Ok(value)) => break Ok(value),
+                        Ok(Err(jsonrpc_err)) => {
+                            if jsonrpc_err.code == error_codes::TOOL_CANCELLED {
+                                break Err(DispatcherError::Cancelled);
+                            }
+                            break Err(DispatcherError::ClientError(jsonrpc_err));
                         }
-                        break Err(DispatcherError::ClientError(jsonrpc_err));
-                    }
-                    Err(_recv_closed) => break Err(DispatcherError::SessionGone),
-                },
-                _ = tokio::time::sleep_until(deadline) => {
-                    connection.cancel_pending(&req_id);
-                    break Err(DispatcherError::TimedOutWhileRunning);
+                        Err(_recv_closed) => break Err(DispatcherError::SessionGone),
+                    },
+                    _ = tokio::time::sleep_until(deadline) => {
+                        connection.cancel_pending(&req_id);
+                        break Err(DispatcherError::TimedOutWhileRunning);
+                    },
+                    _ = cancellation.cancelled(), if !cancel_sent => {
+                        cancel_sent = true;
+                        send_tool_cancel(&connection, &req_id);
+                        // продолжаем цикл — ждём rx или deadline.
+                    },
                 }
-                _ = cancellation.cancelled(), if !cancel_sent => {
-                    cancel_sent = true;
-                    let cancel_params = ToolCancelParams {
-                        id: req_id.clone(),
-                        reason: Some("cancelled by manager".to_owned()),
-                    };
-                    let v = serde_json::to_value(&cancel_params).expect("cancel params");
-                    // Шлём cancel "в пустоту" — нам ответ tool.cancel по сути не нужен.
-                    if let Ok((_cancel_id, _cancel_rx)) =
-                        connection.dispatch_request(methods::TOOL_CANCEL, v)
-                    {
-                        // не ждём ответа — продолжаем ждать tool.call terminal.
-                    }
-                    // продолжаем цикл — ждём rx или deadline.
+            } else {
+                tokio::select! {
+                    biased;
+                    resp = &mut rx => match resp {
+                        Ok(Ok(value)) => break Ok(value),
+                        Ok(Err(jsonrpc_err)) => {
+                            if jsonrpc_err.code == error_codes::TOOL_CANCELLED {
+                                break Err(DispatcherError::Cancelled);
+                            }
+                            break Err(DispatcherError::ClientError(jsonrpc_err));
+                        }
+                        Err(_recv_closed) => break Err(DispatcherError::SessionGone),
+                    },
+                    _ = cancellation.cancelled(), if !cancel_sent => {
+                        cancel_sent = true;
+                        send_tool_cancel(&connection, &req_id);
+                        // продолжаем цикл — ждём terminal без локального deadline.
+                    },
                 }
             }
         };
@@ -220,6 +239,16 @@ fn map_call_err_send(err: ConnectionCallError) -> DispatcherError {
     }
 }
 
+fn send_tool_cancel(connection: &ConnectionHandle, req_id: &crate::session_manager::protocol::Id) {
+    let cancel_params = ToolCancelParams {
+        id: req_id.clone(),
+        reason: Some("cancelled by manager".to_owned()),
+    };
+    let v = serde_json::to_value(&cancel_params).expect("cancel params");
+    // Шлём cancel "в пустоту" — нам ответ tool.cancel по сути не нужен.
+    let _ = connection.dispatch_request(methods::TOOL_CANCEL, v);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,7 +283,7 @@ mod tests {
                     .enqueue(
                         conn,
                         ok_call_params(),
-                        Instant::now() + Duration::from_secs(2),
+                        Some(Instant::now() + Duration::from_secs(2)),
                         cancel,
                     )
                     .await
@@ -300,7 +329,7 @@ mod tests {
                     .enqueue(
                         conn,
                         ok_call_params(),
-                        Instant::now() + Duration::from_secs(5),
+                        Some(Instant::now() + Duration::from_secs(5)),
                         cancel,
                     )
                     .await
@@ -355,7 +384,7 @@ mod tests {
                     .enqueue(
                         c,
                         ok_call_params(),
-                        Instant::now() + Duration::from_millis(500),
+                        Some(Instant::now() + Duration::from_millis(500)),
                         CancellationToken::new(),
                     )
                     .await;
@@ -373,7 +402,7 @@ mod tests {
                 d.enqueue(
                     c,
                     ok_call_params(),
-                    Instant::now() + Duration::from_secs(60),
+                    Some(Instant::now() + Duration::from_secs(60)),
                     cancel,
                 )
                 .await
@@ -398,7 +427,7 @@ mod tests {
             .enqueue(
                 conn,
                 ok_call_params(),
-                Instant::now() + Duration::from_secs(1),
+                Some(Instant::now() + Duration::from_secs(1)),
                 CancellationToken::new(),
             )
             .await;
@@ -417,7 +446,7 @@ mod tests {
                 d.enqueue(
                     c,
                     ok_call_params(),
-                    Instant::now() + Duration::from_millis(80),
+                    Some(Instant::now() + Duration::from_millis(80)),
                     CancellationToken::new(),
                 )
                 .await
@@ -445,7 +474,7 @@ mod tests {
                 d.enqueue(
                     c,
                     ok_call_params(),
-                    Instant::now() + Duration::from_secs(5),
+                    Some(Instant::now() + Duration::from_secs(5)),
                     cancel,
                 )
                 .await

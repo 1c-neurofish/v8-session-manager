@@ -31,6 +31,7 @@
 | `src/session_manager/transport.rs` | WS-транспорт | axum + tokio-tungstenite на `:4000/sessions`. Принимает WS, ведёт reader/writer таски, шлёт RFC 6455 Ping для liveness, дёргает реестр на регистрацию/disconnect/reconnect. |
 | `src/session_manager/registry.rs` | `SessionRegistry` | In-memory реестр сессий: `client_uid` → `SessionRecord` (prefix, generation, tools, статус, `last_inbound_at`, `last_call_at`). Под `Arc`, шарится между транспортами. |
 | `src/session_manager/dispatcher.rs` | per-session FIFO | `SessionDispatcher` для каждой сессии: последовательная очередь tool-вызовов, inflight-счётчик, idle-bump (ADR-0021, ADR-0024). |
+| `src/session_manager/masking/` | security gate | Typed HTTP/1.1 client по UDS, проверка deployment identity и trusted conversation JWT, preflight до WS dispatch и atomic finalize после terminal outcome. |
 | `src/session_manager/protocol.rs` | JSON-RPC 2.0 | Envelope + методы control-plane: `session.register`, `session.bye`, `tools/publish`, `tools/list_changed` (ADR-0023). |
 | `src/session_manager/lifecycle.rs` | sweepers | Idle-sweeper по `idle_timeout_secs`, grace-sweeper по `reconnection_grace_secs` для удаления отключённых записей. |
 | `src/session_manager/router.rs` | резолв префиксов | Маппинг `<prefix>__<tool>` ↔ `(session_id, tool_name)` при `tools/list` и `tools/call` (ADR-0025). |
@@ -56,6 +57,23 @@
 3. Вызов кладётся в `SessionDispatcher` (FIFO + inflight).
 4. WS-фрейм → addin → devkit BSL → handler в прикладном расширении.
 5. Результат поднимается обратно по той же цепочке.
+
+Для шести masking-managed tools перед шагом 3 manager проверяет broker assertion
+и identity базы, затем выполняет service preflight. После шага 4 manager требует
+внутренний secret-cut envelope и всегда вызывает finalize — в том числе для
+ошибок и metadata bypass. Агент получает только `public_result` сервиса. Ошибка
+на любом звене даёт фиксированный sanitized error без raw fallback.
+
+Feed worker получает policy-owned selectors из masking service, вызывает только
+tools с `visibility=internal` через отдельный resolver с проверенной identity
+базы, передаёт bounded chunks и активирует целую cache version. Internal tools
+исключены из `tools/list`, agent resolver, persistent-cache projection и
+`session_list`; их ответы не проходят agent history route.
+
+`database_instance_id` проверяется по deployment binding и route внутри
+принятой доверенной VPN/LAN/tunnel границы. Это operational identity mapping,
+а не криптографическое доказательство WS peer-а; публикация WS endpoint вне
+доверенной границы требует отдельной transport authentication.
 
 ### Liveness
 
