@@ -50,10 +50,11 @@ mcp:
 masking:
   enabled: false
   socket_path: /run/1c-masking/internal.sock
+  internal_listen_path: /run/1c-masking/manager-internal.sock
   preflight_timeout_ms: 3000
   finalize_timeout_ms: 15000
-  feed_chunk_timeout_ms: 10000
-  feed_activate_timeout_ms: 60000
+  internal_call_timeout_ms: 10000
+  service_expected_uid: 994
   broker_public_key_path: /etc/v8-session-manager/broker-ed25519.pub.pem
   broker_issuer: trusted-mcp-broker
   broker_audience: v8-session-manager
@@ -66,15 +67,12 @@ masking:
     - get_metadata
     - get_access_rights
     - get_link_of_object
+  internal_tools:
+    - mcp_internal_masking_metadata_feed
+    - mcp_internal_masking_dictionary_feed
   identity_bindings:
-    - database_instance_id: 11111111-1111-4111-8111-111111111111
+    - session: server-gbig_pam_ai
       database_id: 22222222-2222-4222-8222-222222222222
-      expected_kind: server
-      expected_config_id: server
-      expected_host_id: onec-server-01
-      allowed_internal_tools:
-        - mcp_internal_masking_metadata_feed
-        - mcp_internal_masking_dictionary_feed
 ```
 
 ## Корневые ключи
@@ -132,9 +130,10 @@ Prometheus exporter.
 ## Секция `masking`
 
 По умолчанию интеграция выключена. При `enabled: true` обязательны UDS сервиса,
-Ed25519 public key trusted broker-а и хотя бы одна deployment-owned identity
-binding. Manager принимает `conversation_id` только из JWT/JWS header, проверяя
-`iss`, `aud=v8-session-manager`, `iat`, `exp` и максимальный TTL. Tool arguments
+UDS internal endpoint менеджера, UID peer-а сервиса, Ed25519 public key trusted
+broker-а и хотя бы одна session-name identity binding. Manager принимает
+`conversation_id` только из JWT/JWS header, проверяя `iss`,
+`aud=v8-session-manager`, `iat`, `exp` и максимальный TTL. Tool arguments
 и MCP `_meta` источниками chat identity не являются.
 
 `managed_tools` должен содержать ровно шесть имён: `execute_query`,
@@ -144,19 +143,34 @@ finalize, поэтому masked history создаётся автоматиче�
 Первые три классифицируются сервисом как `data-mask`, последние три — как
 `metadata/non-data-bypass`.
 
-Каждая `identity_bindings` запись содержит `database_instance_id`, непрозрачный
-`database_id`, `expected_kind`, `expected_config_id` и опциональный
-`expected_host_id`; `allowed_internal_tools` должен содержать ровно два hidden
-feed tool. Несовпадение registration tuple или internal allowlist отклоняется
-до помещения сессии в registry и до dispatch в 1С.
+`internal_tools` — ровно два internal tool адаптера
+(`mcp_internal_masking_metadata_feed`, `mcp_internal_masking_dictionary_feed`),
+через которые сервис маскирования загружает словарь. Метка `Internal`
+расставляется менеджером по имени из конфига; adapter-provided visibility
+не доверяется (adapter-declared `Internal` сохраняется как fail-safe,
+`Public` для configured internal-имени игнорируется). Internal tools
+исключены из `tools/list`, agent resolver, persistent cache и `session_list`.
+
+### Internal endpoint менеджера
+
+`internal_listen_path` — UDS в том же shared volume, что и socket сервиса.
+На нём менеджер принимает `POST /internal/v1/tools/call`
+(`{database_id, name, arguments}`) только от peer-а с UID
+`service_expected_uid`; unknown tool, чужой UID и неоднозначный target
+отклоняются фиксированными error-кодами. `internal_call_timeout_ms` —
+таймаут dispatch в сессию 1С.
+
+Каждая `identity_bindings` запись содержит `session` (registered
+`client_uid` адаптера) и `database_id` (непрозрачный UUID базы в сервисе
+маскирования). Имена сессий и UUID должны быть непустыми и уникальными;
+сессия вне списка не получает database identity и managed route.
 Эта привязка является operational mapping внутри принятой доверенной сетевой
 границы (VPN/LAN/tunnel): manager не выполняет отдельную криптографическую
 аутентификацию WS registration. Поэтому WS endpoint нельзя публиковать за
 пределами этой границы без отдельного transport-auth слоя.
 
-Timeout defaults: `preflight_timeout_ms=3000`, `finalize_timeout_ms=15000`.
-Feed chunk timeout — `feed_chunk_timeout_ms=10000`, atomic activation timeout —
-`feed_activate_timeout_ms=60000`.
+Timeout defaults: `preflight_timeout_ms=3000`, `finalize_timeout_ms=15000`,
+`internal_call_timeout_ms=10000`.
 Finalize может один раз повторить только transport failure с тем же `call_id`.
 Masking response никогда не добавляет agent-facing receipt/history ID.
 

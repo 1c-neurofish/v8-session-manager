@@ -36,7 +36,6 @@ fn register_params(uid: &str, kind: &str, tools: Vec<ToolDescriptor>) -> Session
         version: "1.0".to_owned(),
         infobase_name: "test_db".to_owned(),
         ib_session_number: 1,
-        database_instance_id: None,
         tools,
         config_id: None,
         host_id: None,

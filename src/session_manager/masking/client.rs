@@ -7,7 +7,6 @@ use hyper::client::conn::http1;
 use hyper::{Request, StatusCode};
 use hyper_util::rt::TokioIo;
 use serde::de::DeserializeOwned;
-use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::net::UnixStream;
@@ -44,40 +43,20 @@ pub struct FinalizeRequest {
     pub tool_name: String,
     pub outcome: FinalizeOutcome,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub evidence: Option<Value>,
+    pub field_sources: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FinalizeOutcome {
+    /// Контракт Р2: `result` — непрозрачный JSON из конверта 1С; менеджер
+    /// передаёт его сервису без типизации ToolCallResult и без потери полей.
     ToolResult {
-        #[serde(serialize_with = "serialize_finalize_tool_result")]
-        result: ToolCallResult,
+        result: Value,
     },
     TransportError {
         error: Value,
     },
-}
-
-fn serialize_finalize_tool_result<S>(
-    result: &ToolCallResult,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let field_count = if result.structured_content.is_some() {
-        3
-    } else {
-        2
-    };
-    let mut wire = serializer.serialize_struct("ToolCallResult", field_count)?;
-    wire.serialize_field("content", &result.content)?;
-    wire.serialize_field("is_error", &result.is_error)?;
-    if let Some(structured_content) = &result.structured_content {
-        wire.serialize_field("structured_content", structured_content)?;
-    }
-    wire.end()
 }
 
 #[derive(Debug, Deserialize)]
@@ -149,8 +128,6 @@ pub struct MaskingServiceClient {
     socket_path: PathBuf,
     preflight_timeout: Duration,
     finalize_timeout: Duration,
-    feed_chunk_timeout: Duration,
-    feed_activate_timeout: Duration,
 }
 
 impl MaskingServiceClient {
@@ -158,15 +135,11 @@ impl MaskingServiceClient {
         socket_path: PathBuf,
         preflight_timeout: Duration,
         finalize_timeout: Duration,
-        feed_chunk_timeout: Duration,
-        feed_activate_timeout: Duration,
     ) -> Self {
         Self {
             socket_path,
             preflight_timeout,
             finalize_timeout,
-            feed_chunk_timeout,
-            feed_activate_timeout,
         }
     }
 
@@ -256,59 +229,11 @@ impl MaskingServiceClient {
             Err(_) => Err(ClientError::Timeout),
         }
     }
-
-    pub async fn feed_jobs(&self, limit: u8) -> Result<FeedJobsResponse, ClientError> {
-        let path = format!("/internal/v1/feed/jobs?limit={}", limit.clamp(1, 10));
-        let future = request_json(&self.socket_path, hyper::Method::GET, &path, Vec::new());
-        tokio::time::timeout(self.feed_chunk_timeout, future)
-            .await
-            .map_err(|_| ClientError::Timeout)?
-    }
-
-    pub async fn feed_chunk(
-        &self,
-        job_id: &str,
-        index: u32,
-        request: &FeedChunkRequest,
-    ) -> Result<FeedChunkResponse, ClientError> {
-        self.post(
-            &format!("/internal/v1/feed/jobs/{job_id}/chunks/{index}"),
-            request,
-            self.feed_chunk_timeout,
-        )
-        .await
-    }
-
-    pub async fn feed_activate(
-        &self,
-        job_id: &str,
-        request: &FeedActivateRequest,
-    ) -> Result<FeedActivateResponse, ClientError> {
-        self.post(
-            &format!("/internal/v1/feed/jobs/{job_id}/activate"),
-            request,
-            self.feed_activate_timeout,
-        )
-        .await
-    }
-
-    pub async fn feed_fail(
-        &self,
-        job_id: &str,
-        request: &FeedFailRequest,
-    ) -> Result<FeedFailResponse, ClientError> {
-        self.post(
-            &format!("/internal/v1/feed/jobs/{job_id}/fail"),
-            request,
-            self.feed_chunk_timeout,
-        )
-        .await
-    }
 }
 
 /// Если полный результат не помещается в bounded internal API, сохраняем ту же
 /// idempotency identity и передаём только фиксированный terminal outcome. Raw
-/// результат и evidence при этом не пересекают UDS и не попадают в history.
+/// результат и field_sources при этом не пересекают UDS и не попадают в history.
 fn serialize_finalize_request(request: &FinalizeRequest) -> Result<Vec<u8>, ClientError> {
     let body = serde_json::to_vec(request).map_err(|_| ClientError::InvalidResponse)?;
     if body.len() <= MAX_INTERNAL_BODY_BYTES {
@@ -325,7 +250,7 @@ fn serialize_finalize_request(request: &FinalizeRequest) -> Result<Vec<u8>, Clie
         outcome: FinalizeOutcome::TransportError {
             error: serde_json::json!({"code": "RESULT_LIMIT_EXCEEDED"}),
         },
-        evidence: Some(serde_json::json!({
+        field_sources: Some(serde_json::json!({
             "degraded_reasons": ["manager:result_limit_exceeded"]
         })),
     };
@@ -388,112 +313,6 @@ async fn request_json<R: DeserializeOwned>(
     Err(ClientError::InvalidResponse)
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct FeedJobsResponse {
-    pub schema_version: u8,
-    pub jobs: Vec<FeedJob>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct FeedJob {
-    pub job_id: String,
-    pub database_id: String,
-    pub target_version: u64,
-    pub max_chunk_bytes: usize,
-    pub metadata_selector: MetadataSelector,
-    pub dictionary_selectors: Vec<DictionarySelector>,
-    pub hard_limits: FeedHardLimits,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetadataSelector {
-    pub mode: String,
-    pub page_size: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DictionarySelector {
-    pub selection_id: String,
-    pub source_path: String,
-    pub category: String,
-    pub filter_ast: Option<Value>,
-    pub page_size: u32,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct FeedHardLimits {
-    pub max_source_paths: usize,
-    pub max_total_values: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeedMetadataItem {
-    pub source_path: String,
-    pub field_name: String,
-    pub field_type: String,
-    pub password_mode: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeedDictionaryValue {
-    pub source_path: String,
-    pub category: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct FeedChunkPayload {
-    pub selection_id: Option<String>,
-    pub page_index: u32,
-    pub metadata: Vec<FeedMetadataItem>,
-    pub dictionary_values: Vec<FeedDictionaryValue>,
-    pub final_chunk: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct FeedChunkRequest {
-    pub schema_version: u8,
-    pub correlation_id: String,
-    pub chunk_digest: String,
-    pub payload: FeedChunkPayload,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FeedChunkResponse {
-    pub schema_version: u8,
-    pub accepted_index: u32,
-}
-
-#[derive(Debug, Serialize)]
-pub struct FeedActivateRequest {
-    pub schema_version: u8,
-    pub correlation_id: String,
-    pub expected_chunks: u32,
-    pub expected_metadata_count: u64,
-    pub expected_dictionary_count: u64,
-    pub aggregate_digest: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FeedActivateResponse {
-    pub schema_version: u8,
-    pub cache_version: u64,
-    pub status: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct FeedFailRequest {
-    pub schema_version: u8,
-    pub correlation_id: String,
-    pub reason_code: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FeedFailResponse {
-    pub schema_version: u8,
-    pub status: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,33 +342,18 @@ mod tests {
             chat_id: "chat".to_owned(),
             tool_name: "execute_query".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
-                result: ToolCallResult {
-                    content: vec![crate::session_manager::protocol::ToolContent::Text {
-                        text: "masked".to_owned(),
-                    }],
-                    is_error: false,
-                    structured_content: Some(json!({"masked": true})),
-                },
+                result: json!({"success": true, "data": [["masked"]]}),
             },
-            evidence: Some(json!({"lineage": []})),
+            field_sources: Some(json!({"lineage": []})),
         };
         let value = serde_json::to_value(finalize).unwrap();
         assert_eq!(value["outcome"]["kind"], "tool_result");
-        assert_eq!(value["outcome"]["result"]["content"][0]["type"], "text");
-        assert_eq!(value["outcome"]["result"]["is_error"], false);
+        assert_eq!(value["outcome"]["result"]["data"][0][0], "masked");
         assert!(value.get("history_id").is_none());
-
-        let metadata_chunk = FeedChunkPayload {
-            selection_id: None,
-            page_index: 0,
-            metadata: Vec::new(),
-            dictionary_values: Vec::new(),
-            final_chunk: true,
-        };
-        assert_eq!(
-            serde_json::to_value(metadata_chunk).unwrap()["selection_id"],
-            Value::Null
-        );
+        // Контракт П1: сервис принимает `field_sources`; устаревший ключ
+        // `evidence` отклоняется deny_unknown_fields на стороне сервиса.
+        assert!(value.get("field_sources").is_some());
+        assert!(value.get("evidence").is_none());
 
         let verified_terminal = TerminalRequest {
             schema_version: 1,
@@ -603,15 +407,12 @@ mod tests {
             chat_id: "opaque-chat".to_owned(),
             tool_name: "execute_query".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
-                result: ToolCallResult {
-                    content: vec![crate::session_manager::protocol::ToolContent::Text {
-                        text: format!("{raw_marker}{}", "x".repeat(MAX_INTERNAL_BODY_BYTES)),
-                    }],
-                    is_error: false,
-                    structured_content: None,
-                },
+                result: json!({
+                    "success": true,
+                    "data": [format!("{raw_marker}{}", "x".repeat(MAX_INTERNAL_BODY_BYTES))]
+                }),
             },
-            evidence: Some(json!({"lineage": [raw_marker]})),
+            field_sources: Some(json!({"lineage": [raw_marker]})),
         };
 
         let body = serialize_finalize_request(&request).unwrap();
@@ -628,7 +429,7 @@ mod tests {
             json!({"code":"RESULT_LIMIT_EXCEEDED"})
         );
         assert_eq!(
-            wire["evidence"],
+            wire["field_sources"],
             json!({"degraded_reasons":["manager:result_limit_exceeded"]})
         );
         assert!(!String::from_utf8(body).unwrap().contains(raw_marker));

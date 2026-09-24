@@ -229,10 +229,6 @@ journalctl -u v8-session-manager -f
 | `infobase_name` | string, непустая | Имя информационной базы 1С (как видит её клиент). Используется для идентификации источника tool-вызова в `session_list` и в логах менеджера. |
 | `ib_session_number` | u32 | Внутренний номер сеанса 1С — `НомерСеанса()` платформы. На soft-reconnect перетирается актуальным значением: после переподключения номер сеанса в 1С может смениться. |
 
-Опциональное для legacy-сессий поле `database_instance_id` содержит
-deployment-provisioned UUID установки базы. Для шести tools под masking gate
-оно обязательно; имя базы и `session_id` identity базы не заменяют.
-
 Регистрация без этих полей или с пустым `infobase_name` отклоняется
 с JSON-RPC ошибкой `-32602` (`InvalidParams`).
 
@@ -280,10 +276,15 @@ Tool `session_list` (единственный встроенный tool мене
 | `masking.broker_public_key_path` | Ed25519 PEM public key trusted broker-а | `/etc/v8-session-manager/broker-ed25519.pub.pem` |
 
 При `masking.enabled: true` manager требует проверенный short-lived JWT/JWS
-диалога, точную deployment-привязку `database_instance_id → database_id/route`
+диалога, session-name привязку `client_uid → database_id` из конфига
 и успешно завершённые preflight/finalize. Любая ошибка закрывает вызов до выдачи
 результата; raw fallback отсутствует. Agent-facing параметры маскирования,
 history IDs и controls не добавляются.
+
+Сервис маскирования загружает словарь через manager-owned UDS endpoint
+`POST /internal/v1/tools/call` (`masking.internal_listen_path`), доступный
+только peer-у с UID `masking.service_expected_uid`; internal tools
+адаптера не попадают в agent view.
 
 Привязка базы предполагает доверенный VPN/LAN/tunnel между 1С и WS endpoint;
 сам `session.register` отдельной криптографической аутентификации не выполняет.

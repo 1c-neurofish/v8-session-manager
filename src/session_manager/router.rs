@@ -315,7 +315,6 @@ mod tests {
             version: "1.0".to_owned(),
             infobase_name: "test_db".to_owned(),
             ib_session_number: 1,
-            database_instance_id: None,
             tools: tools
                 .into_iter()
                 .map(|(n, schema)| ToolDescriptor {

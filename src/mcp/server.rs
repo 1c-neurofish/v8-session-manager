@@ -49,8 +49,8 @@ use crate::config::model::AppConfig;
 use crate::session_manager::dispatcher::DispatcherError;
 use crate::session_manager::management;
 use crate::session_manager::masking::client::FinalizeOutcome;
-use crate::session_manager::masking::feed::spawn_feed_worker;
 use crate::session_manager::masking::gate::transport_error_outcome;
+use crate::session_manager::masking::internal::spawn_internal_endpoint;
 use crate::session_manager::masking::{MaskingFailure, MaskingGate, TrustedConversationContext};
 use crate::session_manager::notify::{spawn_notifier, ToolsListChangedNotifier, DEBOUNCE_WINDOW};
 use crate::session_manager::protocol::{ToolCallParams, ToolCallResult};
@@ -137,7 +137,9 @@ pub fn serve_session_manager(config: AppConfig) -> Result<(), McpServerError> {
             .with_session_registry(Arc::clone(&registry))
             .with_tools_cache(Arc::clone(&tools_cache));
         let notifier = server.tools_changed_notifier();
-        let feed_task = spawn_feed_worker(
+        // Internal UDS endpoint для вызовов сервиса маскирования → менеджер
+        // (`POST /internal/v1/tools/call`); None при masking.enabled=false.
+        let internal_endpoint_task = spawn_internal_endpoint(
             Arc::clone(&server.masking_gate),
             Arc::clone(&registry),
             shutdown.child_token(),
@@ -216,7 +218,9 @@ pub fn serve_session_manager(config: AppConfig) -> Result<(), McpServerError> {
 
         running.shutdown();
         notifier_task.abort();
-        feed_task.abort();
+        if let Some(task) = internal_endpoint_task {
+            task.abort();
+        }
         terminal_replay_task.abort();
         lifecycle.cancel_token().cancel();
         let _ = sweeper_task.await;
@@ -587,13 +591,13 @@ impl McpToolServer {
             .bump_last_call(&resolved.session_id, std::time::Instant::now());
         let outcome = rec
             .dispatcher
-            .enqueue(connection, params, deadline, cancellation)
+            .enqueue(connection, params, deadline, cancellation.clone())
             .await;
         if let Some(masking_context) = masking_context.as_ref() {
-            let (finalize_outcome, evidence) = match outcome {
+            let (finalize_outcome, field_sources) = match outcome {
                 Ok(result) => match extract_masking_envelope(result) {
-                    Ok((result, evidence)) => {
-                        (FinalizeOutcome::ToolResult { result }, Some(evidence))
+                    Ok((result, field_sources)) => {
+                        (FinalizeOutcome::ToolResult { result }, Some(field_sources))
                     }
                     Err(code) => (transport_error_outcome(code), None),
                 },
@@ -601,7 +605,7 @@ impl McpToolServer {
             };
             return match self
                 .masking_gate
-                .finalize(masking_context, finalize_outcome, evidence)
+                .finalize(masking_context, finalize_outcome, field_sources)
                 .await
             {
                 Ok(result) => dispatcher_outcome_to_call_result(Ok(result)),
@@ -622,26 +626,33 @@ fn trusted_conversation_context(
         .cloned()
 }
 
+/// Конверт результата managed tool из первого text-блока `content`
+/// (boundary формат mcp_tools, контракт TASK-222 П1). Менеджер валидирует
+/// только конверт и не интерпретирует `result`/`field_sources`: `result`
+/// непрозрачен (контракт Р2) и передаётся сервису как JSON-значение.
 #[derive(serde::Deserialize)]
 struct MaskingResultEnvelope {
     schema_version: u8,
-    result: ToolCallResult,
-    evidence: serde_json::Value,
-    secret_cut_applied: bool,
+    result: serde_json::Value,
+    /// Field-origin информация для сервиса маскирования — идёт в finalize
+    /// как field_sources без manager-side интерпретации.
+    field_sources: serde_json::Value,
 }
 
 fn extract_masking_envelope(
     outer: ToolCallResult,
-) -> Result<(ToolCallResult, serde_json::Value), &'static str> {
-    let Some(value) = outer.structured_content else {
+) -> Result<(serde_json::Value, serde_json::Value), &'static str> {
+    let Some(crate::session_manager::protocol::ToolContent::Text { text }) =
+        outer.content.into_iter().next()
+    else {
         return Err("RESULT_INVALID");
     };
     let envelope: MaskingResultEnvelope =
-        serde_json::from_value(value).map_err(|_| "RESULT_INVALID")?;
-    if envelope.schema_version != 1 || !envelope.secret_cut_applied {
+        serde_json::from_str(&text).map_err(|_| "RESULT_INVALID")?;
+    if envelope.schema_version != 1 {
         return Err("RESULT_INVALID");
     }
-    Ok((envelope.result, envelope.evidence))
+    Ok((envelope.result, envelope.field_sources))
 }
 
 fn dispatcher_error_code(error: &DispatcherError) -> &'static str {
@@ -798,7 +809,6 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                     version: "1.0".to_owned(),
                     infobase_name: "test_db".to_owned(),
                     ib_session_number: 1,
-                    database_instance_id: None,
                     tools: tools
                         .iter()
                         .map(|name| ToolDescriptor {
@@ -863,42 +873,33 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     }
 
     #[test]
-    fn masking_envelope_unwraps_full_result_and_keeps_all_public_copies() {
-        let inner = ToolCallResult {
-            content: vec![
-                crate::session_manager::protocol::ToolContent::Text {
-                    text: "masked text".to_owned(),
-                },
-                crate::session_manager::protocol::ToolContent::Json {
-                    json: json!({"fio": "[MASK:v1:FIO:test]"}),
-                },
-            ],
-            is_error: true,
-            structured_content: Some(json!({"rows": [["[MASK:v1:FIO:test]"]]})),
-        };
+    fn masking_envelope_parses_json_from_first_text_content() {
+        // Контракт Р2: `result` — непрозрачный JSON; данные бизнес-результата
+        // доезжают до сервиса без потери полей (data не теряется).
+        let inner = json!({
+            "success": true,
+            "data": [["ФИО-значение", 42]],
+            "truncated": false,
+            "custom_shape": {"nested": [1, 2, 3]}
+        });
         let outer = ToolCallResult {
-            content: vec![],
+            content: vec![crate::session_manager::protocol::ToolContent::Text {
+                text: serde_json::to_string(&json!({
+                    "schema_version": 1,
+                    "result": inner,
+                    "field_sources": {"schema": {"columns": []}, "lineage": []}
+                }))
+                .unwrap(),
+            }],
             is_error: false,
-            structured_content: Some(json!({
-                "schema_version": 1,
-                "result": inner,
-                "evidence": {"schema": {}, "lineage": [], "degraded_reasons": []},
-                "secret_cut_applied": true
-            })),
+            structured_content: None,
         };
 
-        let (unwrapped, evidence) = extract_masking_envelope(outer).unwrap();
-        assert!(unwrapped.is_error);
-        assert_eq!(unwrapped.content.len(), 2);
-        assert_eq!(evidence["degraded_reasons"], json!([]));
-
-        let public = dispatcher_outcome_to_call_result(Ok(unwrapped)).unwrap();
-        assert_eq!(public.content.len(), 2);
-        assert_eq!(public.is_error, Some(true));
-        assert_eq!(
-            public.structured_content,
-            Some(json!({"rows": [["[MASK:v1:FIO:test]"]]}))
-        );
+        let (unwrapped, field_sources) = extract_masking_envelope(outer).unwrap();
+        assert_eq!(unwrapped, inner);
+        assert_eq!(unwrapped["data"][0][1], json!(42));
+        assert_eq!(unwrapped["custom_shape"]["nested"], json!([1, 2, 3]));
+        assert_eq!(field_sources["schema"]["columns"], json!([]));
     }
 
     #[test]
@@ -921,18 +922,42 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     }
 
     #[test]
-    fn masking_envelope_requires_secret_cut_confirmation() {
-        let outer = ToolCallResult {
+    fn masking_envelope_rejects_missing_or_malformed_text_envelope() {
+        // Нет text-блока вообще.
+        let empty = ToolCallResult {
             content: vec![],
             is_error: false,
             structured_content: Some(json!({
                 "schema_version": 1,
                 "result": {"content": [], "is_error": false},
-                "evidence": {},
-                "secret_cut_applied": false
+                "field_sources": {}
             })),
         };
-        assert_eq!(extract_masking_envelope(outer), Err("RESULT_INVALID"));
+        assert_eq!(extract_masking_envelope(empty), Err("RESULT_INVALID"));
+
+        // Первый блок — не text.
+        let json_first = ToolCallResult {
+            content: vec![crate::session_manager::protocol::ToolContent::Json {
+                json: json!({"schema_version": 1}),
+            }],
+            is_error: false,
+            structured_content: None,
+        };
+        assert_eq!(extract_masking_envelope(json_first), Err("RESULT_INVALID"));
+
+        // Text не JSON-конверт и конверт без обязательных полей.
+        for text in [
+            "not-json".to_owned(),
+            serde_json::to_string(&json!({"schema_version": 2, "result": {"content": [], "is_error": false}, "field_sources": {}})).unwrap(),
+            serde_json::to_string(&json!({"schema_version": 1, "result": {"content": [], "is_error": false}})).unwrap(),
+        ] {
+            let outer = ToolCallResult {
+                content: vec![crate::session_manager::protocol::ToolContent::Text { text }],
+                is_error: false,
+                structured_content: None,
+            };
+            assert_eq!(extract_masking_envelope(outer), Err("RESULT_INVALID"));
+        }
     }
 
     #[test]
@@ -948,22 +973,16 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         let temp = tempfile::tempdir().unwrap();
         let public_key_path = temp.path().join("broker.pub.pem");
         std::fs::write(&public_key_path, TEST_BROKER_PUBLIC_KEY).unwrap();
-        let instance_id = uuid::Uuid::new_v4();
         let database_id = uuid::Uuid::new_v4();
         let masking = crate::config::model::MaskingConfig {
             enabled: true,
             socket_path: temp.path().join("service-not-running.sock"),
+            internal_listen_path: temp.path().join("manager.sock"),
+            service_expected_uid: Some(994),
             broker_public_key_path: public_key_path,
             identity_bindings: vec![MaskingIdentityBinding {
-                database_instance_id: instance_id.to_string(),
+                session: "dev-trusted".to_owned(),
                 database_id: database_id.to_string(),
-                expected_kind: "server".to_owned(),
-                expected_config_id: "server".to_owned(),
-                expected_host_id: None,
-                allowed_internal_tools: vec![
-                    "mcp_internal_masking_metadata_feed".to_owned(),
-                    "mcp_internal_masking_dictionary_feed".to_owned(),
-                ],
             }],
             ..Default::default()
         };
@@ -983,7 +1002,6 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             version: "1".to_owned(),
             infobase_name: "dev".to_owned(),
             ib_session_number: 1,
-            database_instance_id: Some(instance_id.to_string()),
             tools: vec![ToolDescriptor {
                 name: "execute_query".to_owned(),
                 description: None,
@@ -997,12 +1015,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             prompts: None,
             extras: None,
         };
-        let trusted_route = server
-            .masking_gate
-            .validate_registration(&registration)
-            .unwrap();
         registry
-            .register_trusted(registration, Instant::now(), None, trusted_route)
+            .register(registration, Instant::now(), None)
             .unwrap();
 
         let request = CallToolRequestParams::new("execute_query").with_arguments(

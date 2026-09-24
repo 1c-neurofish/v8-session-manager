@@ -146,9 +146,8 @@ impl SessionDispatcher {
         let _guard = InflightGuard { dispatcher: self };
 
         // 2. шлём outbound tool.call.
-        let value = serde_json::to_value(&params).map_err(|e| {
-            DispatcherError::InvalidResult(format!("serialize tool.call params: {e}"))
-        })?;
+        let value = serde_json::to_value(&params)
+            .map_err(|_| DispatcherError::InvalidResult("invalid tool.call params".into()))?;
         let (req_id, mut rx) = connection
             .dispatch_request(methods::TOOL_CALL, value)
             .map_err(map_call_err_send)?;
@@ -203,8 +202,8 @@ impl SessionDispatcher {
 
         match outcome {
             Ok(value) => {
-                let parsed: ToolCallResult = serde_json::from_value(value).map_err(|e| {
-                    DispatcherError::InvalidResult(format!("decode tool.call result: {e}"))
+                let parsed: ToolCallResult = serde_json::from_value(value).map_err(|_| {
+                    DispatcherError::InvalidResult("invalid tool.call result".into())
                 })?;
                 Ok(parsed)
             }

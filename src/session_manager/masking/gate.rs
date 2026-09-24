@@ -15,12 +15,10 @@ use crate::session_manager::masking::client::{
     ClientError, FinalizeOutcome, FinalizeRequest, MaskingServiceClient, PreflightRequest,
     TerminalRequest, TerminalScope,
 };
-use crate::session_manager::masking::identity::{
-    IdentityResolver, RegistrationTrustError, VerifiedDatabaseIdentity,
-};
+use crate::session_manager::masking::identity::{IdentityResolver, VerifiedDatabaseIdentity};
 use crate::session_manager::protocol::ToolCallResult;
-use crate::session_manager::protocol::{SessionRegisterParams, ToolDescriptor, ToolVisibility};
-use crate::session_manager::registry::{SessionRecord, TrustedRouteContext};
+use crate::session_manager::protocol::{ToolDescriptor, ToolVisibility};
+use crate::session_manager::registry::SessionRecord;
 use crate::support::atomic_write::write_json_atomic;
 
 const TERMINAL_OUTBOX_FILE: &str = "masking_terminal_outbox.json";
@@ -215,12 +213,21 @@ fn valid_terminal(event: &TerminalRequest) -> bool {
 pub struct MaskingGate {
     enabled: bool,
     managed_tools: Arc<HashSet<String>>,
+    /// Имена internal tools (`masking.internal_tools`): не публикуются
+    /// агенту и вызываются только через internal UDS endpoint.
+    internal_tools: Arc<HashSet<String>>,
     identity: Arc<IdentityResolver>,
     client: Option<MaskingServiceClient>,
     verifier: Option<Arc<ConversationVerifier>>,
     assertion_header: String,
     max_assertion_ttl_secs: u64,
     terminal_outbox: Option<Arc<AsyncMutex<TerminalOutbox>>>,
+    /// UDS-listener вызовов сервис → менеджер (`POST /internal/v1/tools/call`).
+    internal_listen_path: PathBuf,
+    /// Ожидаемый UID сервиса на `internal_listen_path` (peer-cred gate).
+    service_expected_uid: Option<u32>,
+    /// Дедлайн одного internal tool.call.
+    internal_call_timeout: Duration,
 }
 
 impl MaskingGate {
@@ -229,12 +236,16 @@ impl MaskingGate {
             return Ok(Self {
                 enabled: false,
                 managed_tools: Arc::new(HashSet::new()),
+                internal_tools: Arc::new(config.internal_tools.iter().cloned().collect()),
                 identity: Arc::new(IdentityResolver::new(&[])),
                 client: None,
                 verifier: None,
                 assertion_header: config.conversation_assertion_header.clone(),
                 max_assertion_ttl_secs: config.broker_max_assertion_ttl_secs,
                 terminal_outbox: None,
+                internal_listen_path: config.internal_listen_path.clone(),
+                service_expected_uid: config.service_expected_uid,
+                internal_call_timeout: Duration::from_millis(config.internal_call_timeout_ms),
             });
         }
         let pem = std::fs::read(&config.broker_public_key_path)
@@ -249,13 +260,12 @@ impl MaskingGate {
         Ok(Self {
             enabled: true,
             managed_tools: Arc::new(config.managed_tools.iter().cloned().collect()),
+            internal_tools: Arc::new(config.internal_tools.iter().cloned().collect()),
             identity: Arc::new(IdentityResolver::new(&config.identity_bindings)),
             client: Some(MaskingServiceClient::new(
                 config.socket_path.clone(),
                 Duration::from_millis(config.preflight_timeout_ms),
                 Duration::from_millis(config.finalize_timeout_ms),
-                Duration::from_millis(config.feed_chunk_timeout_ms),
-                Duration::from_millis(config.feed_activate_timeout_ms),
             )),
             verifier: Some(Arc::new(ConversationVerifier {
                 key,
@@ -267,17 +277,52 @@ impl MaskingGate {
             terminal_outbox: Some(Arc::new(AsyncMutex::new(TerminalOutbox::load(
                 work_path.join(TERMINAL_OUTBOX_FILE),
             )?))),
+            internal_listen_path: config.internal_listen_path.clone(),
+            service_expected_uid: config.service_expected_uid,
+            internal_call_timeout: Duration::from_millis(config.internal_call_timeout_ms),
         })
     }
 
-    /// Gate относится только к deployment-configured route. Legacy-сессии без
-    /// database identity продолжают прежний proxy path, но наличие любого
-    /// заявленного instance ID переводит selected tool в fail-closed ветку —
-    /// даже если trusted context оказался повреждён после регистрации.
+    /// Gate относится только к deployment-configured route: managed tool на
+    /// сессии, которой конфиг привязал `database_id`. Прочие сессии продолжают
+    /// прежний proxy path.
     pub fn is_managed_for(&self, record: &SessionRecord, tool_name: &str) -> bool {
         self.enabled
             && self.managed_tools.contains(tool_name)
-            && (record.trusted_route.is_some() || record.database_instance_id.is_some())
+            && self.identity.verify(record).is_some()
+    }
+
+    /// Помечает visibility каждого tool по имени из конфига — единственная
+    /// точка, где descriptor получает `Internal`. Adapter-provided
+    /// `Internal` сохраняется как fail-safe (ограничение никогда не
+    /// расширяется до публичного); adapter-provided `Public` для имени из
+    /// `masking.internal_tools` не доверяется.
+    pub fn normalize_tools(&self, tools: &mut [ToolDescriptor]) {
+        for tool in tools.iter_mut() {
+            tool.visibility = if self.internal_tools.contains(&tool.name)
+                || matches!(tool.visibility, ToolVisibility::Internal)
+            {
+                ToolVisibility::Internal
+            } else {
+                ToolVisibility::Public
+            };
+        }
+    }
+
+    pub(crate) fn internal_tools(&self) -> &HashSet<String> {
+        &self.internal_tools
+    }
+
+    pub(crate) fn internal_listen_path(&self) -> &Path {
+        &self.internal_listen_path
+    }
+
+    pub(crate) fn service_expected_uid(&self) -> Option<u32> {
+        self.service_expected_uid
+    }
+
+    pub(crate) fn internal_call_timeout(&self) -> Duration {
+        self.internal_call_timeout
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -329,31 +374,6 @@ impl MaskingGate {
         self.identity.verify(record)
     }
 
-    pub fn validate_registration(
-        &self,
-        params: &SessionRegisterParams,
-    ) -> Result<Option<TrustedRouteContext>, RegistrationTrustError> {
-        if self.enabled {
-            self.identity.validate_registration(params)
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn validate_tool_update(&self, record: &SessionRecord, tools: &[ToolDescriptor]) -> bool {
-        if self.enabled {
-            self.identity.validate_tool_update(record, tools)
-        } else {
-            !tools
-                .iter()
-                .any(|tool| tool.visibility == ToolVisibility::Internal)
-        }
-    }
-
-    pub(crate) fn service_client(&self) -> Option<&MaskingServiceClient> {
-        self.client.as_ref()
-    }
-
     pub(crate) fn identity_resolver(&self) -> &IdentityResolver {
         &self.identity
     }
@@ -369,7 +389,7 @@ impl MaskingGate {
         MaskingCallContext {
             call_id,
             correlation_id,
-            database_id: identity.database_id().to_string(),
+            database_id: identity.database_id.to_string(),
             chat_id: conversation.conversation_id.clone(),
             tool_name: tool_name.to_owned(),
         }
@@ -516,7 +536,7 @@ impl MaskingGate {
         &self,
         context: &MaskingCallContext,
         outcome: FinalizeOutcome,
-        evidence: Option<Value>,
+        field_sources: Option<Value>,
     ) -> Result<ToolCallResult, MaskingFailure> {
         let request = FinalizeRequest {
             schema_version: 1,
@@ -526,7 +546,7 @@ impl MaskingGate {
             chat_id: context.chat_id.clone(),
             tool_name: context.tool_name.clone(),
             outcome,
-            evidence,
+            field_sources,
         };
         let response = match self
             .client
@@ -664,7 +684,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
 -----END PUBLIC KEY-----
 "#;
 
-    fn gate_for(instance_id: Uuid, database_id: Uuid) -> MaskingGate {
+    fn gate_for(session: &str, database_id: Uuid) -> MaskingGate {
         let dir = tempfile::tempdir().unwrap();
         let public_key_path = dir.path().join("broker.pub.pem");
         std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
@@ -672,35 +692,23 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         config.enabled = true;
         config.broker_public_key_path = public_key_path;
         config.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            database_instance_id: instance_id.to_string(),
+            session: session.to_owned(),
             database_id: database_id.to_string(),
-            expected_kind: "server".to_owned(),
-            expected_config_id: "server".to_owned(),
-            expected_host_id: None,
-            allowed_internal_tools: vec![
-                "mcp_internal_masking_metadata_feed".to_owned(),
-                "mcp_internal_masking_dictionary_feed".to_owned(),
-            ],
         }];
         MaskingGate::from_config(&config, dir.path()).unwrap()
     }
 
     fn gate() -> MaskingGate {
-        gate_for(Uuid::new_v4(), Uuid::new_v4())
+        gate_for("server-gbig_pam_ai", Uuid::new_v4())
     }
 
-    fn registration(
-        client_uid: &str,
-        instance_id: Option<Uuid>,
-        tools: Vec<ToolDescriptor>,
-    ) -> SessionRegisterParams {
+    fn registration(client_uid: &str, tools: Vec<ToolDescriptor>) -> SessionRegisterParams {
         SessionRegisterParams {
             client_uid: client_uid.to_owned(),
             kind: "server".to_owned(),
             version: "1".to_owned(),
             infobase_name: client_uid.to_owned(),
             ib_session_number: 1,
-            database_instance_id: instance_id.map(|id| id.to_string()),
             tools,
             config_id: Some("server".to_owned()),
             host_id: Some("dev-host".to_owned()),
@@ -754,57 +762,52 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     }
 
     #[test]
-    fn masking_scope_is_trusted_dev_route_only_and_legacy_route_cannot_inject_feed() {
-        let instance_id = Uuid::new_v4();
-        let gate = gate_for(instance_id, Uuid::new_v4());
+    fn masking_scope_is_name_bound_route_and_visibility_is_normalized_by_config() {
+        let database = Uuid::new_v4();
+        let gate = gate_for("dev-trusted", database);
         let registry = SessionRegistry::new();
 
         let legacy = registration(
             "prod-legacy",
-            None,
             vec![tool("execute_query", ToolVisibility::Public)],
         );
-        registry
-            .register_trusted(legacy, Instant::now(), None, None)
-            .unwrap();
+        registry.register(legacy, Instant::now(), None).unwrap();
         let legacy = registry.get("prod-legacy").unwrap();
         assert!(!gate.is_managed_for(&legacy, "execute_query"));
-        assert!(!gate.validate_tool_update(
-            &legacy,
-            &[tool(
-                "mcp_internal_masking_metadata_feed",
-                ToolVisibility::Internal
-            )]
-        ));
 
-        let dev = registration(
+        // adapter-provided `Public` не доверен для имён из конфига;
+        // adapter-declared `Internal` сохраняется как fail-safe
+        // (ограничение видимости никогда не расширяется).
+        let mut dev = registration(
             "dev-trusted",
-            Some(instance_id),
             vec![
-                tool("execute_query", ToolVisibility::Public),
-                tool(
-                    "mcp_internal_masking_metadata_feed",
-                    ToolVisibility::Internal,
-                ),
+                tool("execute_query", ToolVisibility::Internal),
+                tool("mcp_internal_masking_metadata_feed", ToolVisibility::Public),
             ],
         );
-        let trusted_route = gate.validate_registration(&dev).unwrap();
-        registry
-            .register_trusted(dev, Instant::now(), None, trusted_route)
-            .unwrap();
+        gate.normalize_tools(&mut dev.tools);
+        registry.register(dev, Instant::now(), None).unwrap();
         let dev = registry.get("dev-trusted").unwrap();
         assert!(gate.is_managed_for(&dev, "execute_query"));
         assert!(!gate.is_managed_for(&dev, "unmanaged_tool"));
-
-        let spoofed = registration(
-            "unknown-instance",
-            Some(Uuid::new_v4()),
-            vec![tool(
-                "mcp_internal_masking_metadata_feed",
-                ToolVisibility::Internal,
-            )],
+        assert_eq!(
+            gate.verify_database(&dev),
+            Some(VerifiedDatabaseIdentity {
+                database_id: database
+            })
         );
-        assert!(gate.validate_registration(&spoofed).is_err());
+        assert_eq!(dev.tools[0].visibility, ToolVisibility::Internal);
+        assert_eq!(dev.tools[1].visibility, ToolVisibility::Internal);
+
+        // Сессия с неизвестным конфигу именем не получает database identity.
+        let other = registration(
+            "unknown-session",
+            vec![tool("execute_query", ToolVisibility::Public)],
+        );
+        registry.register(other, Instant::now(), None).unwrap();
+        let other = registry.get("unknown-session").unwrap();
+        assert!(gate.verify_database(&other).is_none());
+        assert!(!gate.is_managed_for(&other, "execute_query"));
     }
 
     #[test]
@@ -917,15 +920,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         config.preflight_timeout_ms = 100;
         config.broker_public_key_path = public_key_path;
         config.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            database_instance_id: Uuid::new_v4().to_string(),
+            session: "server-gbig_pam_ai".to_owned(),
             database_id: Uuid::new_v4().to_string(),
-            expected_kind: "server".to_owned(),
-            expected_config_id: "server".to_owned(),
-            expected_host_id: None,
-            allowed_internal_tools: vec![
-                "mcp_internal_masking_metadata_feed".to_owned(),
-                "mcp_internal_masking_dictionary_feed".to_owned(),
-            ],
         }];
         let event = TerminalRequest {
             schema_version: 1,
@@ -1003,15 +999,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         config.finalize_timeout_ms = 100;
         config.broker_public_key_path = public_key_path;
         config.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            database_instance_id: Uuid::new_v4().to_string(),
+            session: "server-gbig_pam_ai".to_owned(),
             database_id: Uuid::new_v4().to_string(),
-            expected_kind: "server".to_owned(),
-            expected_config_id: "server".to_owned(),
-            expected_host_id: None,
-            allowed_internal_tools: vec![
-                "mcp_internal_masking_metadata_feed".to_owned(),
-                "mcp_internal_masking_dictionary_feed".to_owned(),
-            ],
         }];
         let gate = MaskingGate::from_config(&config, dir.path()).unwrap();
         let context = MaskingCallContext {
@@ -1025,13 +1014,11 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             .finalize(
                 &context,
                 FinalizeOutcome::ToolResult {
-                    result: ToolCallResult {
-                        content: vec![crate::session_manager::protocol::ToolContent::Text {
-                            text: "raw-marker-must-never-enter-terminal-ledger".to_owned(),
-                        }],
-                        is_error: false,
-                        structured_content: Some(json!({"raw": "private"})),
-                    },
+                    result: json!({
+                        "success": true,
+                        "data": ["raw-marker-must-never-enter-terminal-ledger"],
+                        "raw": "private"
+                    }),
                 },
                 Some(json!({"lineage": ["private"]})),
             )
@@ -1066,15 +1053,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         config.preflight_timeout_ms = 500;
         config.broker_public_key_path = public_key_path;
         config.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            database_instance_id: Uuid::new_v4().to_string(),
+            session: "server-gbig_pam_ai".to_owned(),
             database_id: Uuid::new_v4().to_string(),
-            expected_kind: "server".to_owned(),
-            expected_config_id: "server".to_owned(),
-            expected_host_id: None,
-            allowed_internal_tools: vec![
-                "mcp_internal_masking_metadata_feed".to_owned(),
-                "mcp_internal_masking_dictionary_feed".to_owned(),
-            ],
         }];
         let context = MaskingCallContext {
             call_id: Uuid::new_v4().to_string(),

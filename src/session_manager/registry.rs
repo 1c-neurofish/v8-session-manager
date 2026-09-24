@@ -33,13 +33,6 @@ use crate::session_manager::dispatcher::SessionDispatcher;
 use crate::session_manager::protocol::{SessionRegisterParams, ToolDescriptor};
 use crate::session_manager::tools_cache::ToolsCacheStore;
 
-/// Operational identity accepted at the trusted WS registration boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TrustedRouteContext {
-    pub database_instance_id: uuid::Uuid,
-    pub database_id: uuid::Uuid,
-}
-
 /// Состояние записи сессии.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionState {
@@ -67,9 +60,6 @@ pub struct SessionRecord {
     /// Обновляется при soft reconnect — фактический номер в новом сеансе
     /// 1С может отличаться от номера предыдущего сеанса.
     pub ib_session_number: u32,
-    /// Непрозрачная identity установки базы из доверенной регистрации.
-    pub database_instance_id: Option<String>,
-    pub trusted_route: Option<TrustedRouteContext>,
     pub tools: Vec<ToolDescriptor>,
     pub state: SessionState,
     /// Идентификатор хоста, на котором работает процесс. Берётся из поля
@@ -205,16 +195,18 @@ impl SessionRegistry {
         now: Instant,
         connection: Option<Arc<ConnectionHandle>>,
     ) -> Result<RegisterOutcome, RegisterError> {
-        self.register_trusted(params, now, connection, None)
+        self.register_with_generation(params, now, connection)
+            .map(|(outcome, _)| outcome)
     }
 
-    pub fn register_trusted(
+    /// Регистрация с возвратом `connection_generation` из той же критической
+    /// секции, что и запись (нужен WS-циклу для generation-checked disconnect).
+    pub fn register_with_generation(
         &self,
         params: SessionRegisterParams,
         now: Instant,
         connection: Option<Arc<ConnectionHandle>>,
-        trusted_route: Option<TrustedRouteContext>,
-    ) -> Result<RegisterOutcome, RegisterError> {
+    ) -> Result<(RegisterOutcome, u64), RegisterError> {
         // ADR-0035: резолвим config_id ДО взятия write-lock — нужен для
         // cache upsert после успешной регистрации.
         let resolved_config_id = params
@@ -238,8 +230,6 @@ impl SessionRegistry {
                     existing.config_id = resolved_config_id.clone();
                     existing.infobase_name = params.infobase_name;
                     existing.ib_session_number = params.ib_session_number;
-                    existing.database_instance_id = params.database_instance_id;
-                    existing.trusted_route = trusted_route;
                     existing.connection = connection;
                     existing.connection_generation = new_gen;
                     if let Some(hid) = params.host_id {
@@ -254,7 +244,7 @@ impl SessionRegistry {
                     self.mark_tools_changed();
                     self.mark_session_changed();
                     self.upsert_tools_cache(cache_kind, resolved_config_id, cache_tools);
-                    Ok(RegisterOutcome::Reconnected)
+                    Ok((RegisterOutcome::Reconnected, new_gen))
                 }
             };
         }
@@ -268,8 +258,6 @@ impl SessionRegistry {
             version: params.version,
             infobase_name: params.infobase_name,
             ib_session_number: params.ib_session_number,
-            database_instance_id: params.database_instance_id,
-            trusted_route,
             tools: params.tools,
             state: SessionState::Active,
             host_id: params.host_id.unwrap_or_else(|| "unknown".to_owned()),
@@ -286,11 +274,17 @@ impl SessionRegistry {
         self.mark_tools_changed();
         self.mark_session_changed();
         self.upsert_tools_cache(cache_kind, resolved_config_id, cache_tools);
-        Ok(RegisterOutcome::Created)
+        Ok((RegisterOutcome::Created, generation))
     }
 
+    /// Persistent кеш содержит только agent-visible tools: internal tools
+    /// не должны утекать в кеш ни через register, ни через tools_changed.
     fn upsert_tools_cache(&self, kind: String, config_id: String, tools: Vec<ToolDescriptor>) {
         if let Some(cache) = self.tools_cache() {
+            let tools = tools
+                .into_iter()
+                .filter(|tool| tool.visibility.is_public())
+                .collect();
             cache.upsert(kind, config_id, tools);
         }
     }
@@ -509,7 +503,6 @@ mod tests {
             version: "1.0.0".to_owned(),
             infobase_name: "test_db".to_owned(),
             ib_session_number: 1,
-            database_instance_id: None,
             tools: vec![ToolDescriptor {
                 name: tool_name.to_owned(),
                 description: None,

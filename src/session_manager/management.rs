@@ -120,7 +120,6 @@ mod tests {
             version: "1.0".to_owned(),
             infobase_name: "test_db".to_owned(),
             ib_session_number: 1,
-            database_instance_id: None,
             tools: vec![ToolDescriptor {
                 name: tool.to_owned(),
                 description: None,
@@ -224,9 +223,7 @@ mod tests {
                 "tools": [{"name": "echo", "input_schema": {"type": "object"}}]
             }
         });
-        ws.send(WsMessage::Text(req.to_string().into()))
-            .await
-            .unwrap();
+        ws.send(WsMessage::Text(req.to_string())).await.unwrap();
         let _ = ws.next().await; // ack
 
         // session.list видит запись A

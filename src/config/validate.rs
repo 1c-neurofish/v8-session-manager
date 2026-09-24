@@ -31,11 +31,20 @@ pub enum ConfigValidationError {
     #[error("masking.socket_path must be an absolute non-empty path")]
     InvalidMaskingSocketPath,
 
+    #[error("masking.internal_listen_path must be an absolute non-empty path")]
+    InvalidMaskingInternalListenPath,
+
     #[error("masking.{0} must be greater than zero")]
     InvalidMaskingTimeout(&'static str),
 
     #[error("masking.managed_tools must contain unique non-empty names")]
     InvalidManagedTools,
+
+    #[error("masking.internal_tools must contain unique non-empty names")]
+    InvalidInternalTools,
+
+    #[error("masking.service_expected_uid is required when masking is enabled")]
+    MissingServiceExpectedUid,
 
     #[error("masking.identity_bindings must be non-empty when masking is enabled")]
     MissingMaskingIdentityBindings,
@@ -95,6 +104,11 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
         {
             return Err(ConfigValidationError::InvalidMaskingSocketPath);
         }
+        if config.masking.internal_listen_path.as_os_str().is_empty()
+            || !config.masking.internal_listen_path.is_absolute()
+        {
+            return Err(ConfigValidationError::InvalidMaskingInternalListenPath);
+        }
         if config.masking.preflight_timeout_ms == 0 {
             return Err(ConfigValidationError::InvalidMaskingTimeout(
                 "preflight_timeout_ms",
@@ -105,14 +119,9 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
                 "finalize_timeout_ms",
             ));
         }
-        if config.masking.feed_chunk_timeout_ms == 0 {
+        if config.masking.internal_call_timeout_ms == 0 {
             return Err(ConfigValidationError::InvalidMaskingTimeout(
-                "feed_chunk_timeout_ms",
-            ));
-        }
-        if config.masking.feed_activate_timeout_ms == 0 {
-            return Err(ConfigValidationError::InvalidMaskingTimeout(
-                "feed_activate_timeout_ms",
+                "internal_call_timeout_ms",
             ));
         }
         let mut tools = std::collections::HashSet::new();
@@ -142,6 +151,19 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
         {
             return Err(ConfigValidationError::InvalidManagedTools);
         }
+        let mut internal_tools = std::collections::HashSet::new();
+        if config.masking.internal_tools.is_empty()
+            || config
+                .masking
+                .internal_tools
+                .iter()
+                .any(|name| name.is_empty() || !internal_tools.insert(name))
+        {
+            return Err(ConfigValidationError::InvalidInternalTools);
+        }
+        if config.masking.service_expected_uid.is_none() {
+            return Err(ConfigValidationError::MissingServiceExpectedUid);
+        }
         if config.masking.identity_bindings.is_empty() {
             return Err(ConfigValidationError::MissingMaskingIdentityBindings);
         }
@@ -159,38 +181,20 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
         {
             return Err(ConfigValidationError::InvalidMaskingBrokerSettings);
         }
-        let mut instances = std::collections::HashSet::new();
+        let mut sessions = std::collections::HashSet::new();
         let mut databases = std::collections::HashSet::new();
-        let required_internal_tools = [
-            "mcp_internal_masking_metadata_feed",
-            "mcp_internal_masking_dictionary_feed",
-        ]
-        .into_iter()
-        .collect::<std::collections::HashSet<_>>();
         for binding in &config.masking.identity_bindings {
-            let instance = uuid::Uuid::parse_str(&binding.database_instance_id).map_err(|_| {
-                ConfigValidationError::InvalidMaskingIdentityBinding(
-                    "database_instance_id must be UUID".to_owned(),
-                )
-            })?;
             let database = uuid::Uuid::parse_str(&binding.database_id).map_err(|_| {
                 ConfigValidationError::InvalidMaskingIdentityBinding(
                     "database_id must be UUID".to_owned(),
                 )
             })?;
-            let allowed_internal_tools = binding
-                .allowed_internal_tools
-                .iter()
-                .map(String::as_str)
-                .collect::<std::collections::HashSet<_>>();
-            if binding.expected_kind.is_empty()
-                || binding.expected_config_id.is_empty()
-                || allowed_internal_tools != required_internal_tools
-                || !instances.insert(instance)
+            if binding.session.is_empty()
+                || !sessions.insert(binding.session.as_str())
                 || !databases.insert(database)
             {
                 return Err(ConfigValidationError::InvalidMaskingIdentityBinding(
-                    "bindings must have unique IDs, an exact route, and the two hidden feed tools"
+                    "bindings must have a non-empty session name and unique session/database"
                         .to_owned(),
                 ));
             }
@@ -251,24 +255,28 @@ mod tests {
     }
 
     #[test]
-    fn masking_requires_exact_internal_feed_allowlist() {
+    fn masking_enabled_requires_service_uid_and_name_bindings() {
         let mut cfg = base_config();
         cfg.masking.enabled = true;
+        cfg.masking.socket_path = PathBuf::from("/run/mask.sock");
+        cfg.masking.internal_listen_path = PathBuf::from("/run/mask-manager.sock");
+        cfg.masking.broker_public_key_path = PathBuf::from("/etc/manager/broker.pub.pem");
         cfg.masking.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            database_instance_id: uuid::Uuid::new_v4().to_string(),
+            session: "server-gbig_pam_ai".to_owned(),
             database_id: uuid::Uuid::new_v4().to_string(),
-            expected_kind: "server".to_owned(),
-            expected_config_id: "server".to_owned(),
-            expected_host_id: None,
-            allowed_internal_tools: vec![
-                "mcp_internal_masking_metadata_feed".to_owned(),
-                "mcp_internal_masking_dictionary_feed".to_owned(),
-            ],
         }];
+
+        // UID сервиса обязателен при enabled: им пользуется internal UDS endpoint.
+        assert!(matches!(
+            validate(&cfg),
+            Err(ConfigValidationError::MissingServiceExpectedUid)
+        ));
+
+        cfg.masking.service_expected_uid = Some(994);
         assert!(validate(&cfg).is_ok());
 
-        cfg.masking.identity_bindings[0].allowed_internal_tools[1] =
-            "agent_visible_tool".to_owned();
+        // Пустое имя сессии и дубли баз отклоняются.
+        cfg.masking.identity_bindings[0].session.clear();
         assert!(matches!(
             validate(&cfg),
             Err(ConfigValidationError::InvalidMaskingIdentityBinding(_))

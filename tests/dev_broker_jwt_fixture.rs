@@ -78,16 +78,9 @@ async fn dev_broker_assertion_travels_in_normal_mcp_request_header() {
     generate_ephemeral_ed25519_keys(&private_key_path, &public_key_path);
 
     let (ws_port, http_port) = reserve_loopback_ports();
-    let instance_id = Uuid::new_v4();
     let database_id = Uuid::new_v4();
-    let config_path = write_isolated_config(
-        &temp,
-        ws_port,
-        http_port,
-        instance_id,
-        database_id,
-        &public_key_path,
-    );
+    let config_path =
+        write_isolated_config(&temp, ws_port, http_port, database_id, &public_key_path);
 
     let child = Command::new(env!("CARGO_BIN_EXE_v8-session-manager"))
         .arg("--config")
@@ -108,7 +101,7 @@ async fn dev_broker_assertion_travels_in_normal_mcp_request_header() {
     let (mut ws, _) = connect_async(format!("ws://127.0.0.1:{ws_port}/sessions"))
         .await
         .expect("connect isolated fake DEV route");
-    register_fake_dev_route(&mut ws, instance_id).await;
+    register_fake_dev_route(&mut ws).await;
 
     let initialize = json!({
         "jsonrpc": "2.0",
@@ -200,7 +193,6 @@ fn write_isolated_config(
     temp: &TempDir,
     ws_port: u16,
     http_port: u16,
-    instance_id: Uuid,
     database_id: Uuid,
     public_key_path: &Path,
 ) -> std::path::PathBuf {
@@ -230,10 +222,11 @@ fn write_isolated_config(
     let masking = MaskingConfig {
         enabled: true,
         socket_path: temp.path().join("masking-service-not-running.sock"),
+        internal_listen_path: temp.path().join("manager-internal-not-running.sock"),
         preflight_timeout_ms: 500,
         finalize_timeout_ms: 500,
-        feed_chunk_timeout_ms: 500,
-        feed_activate_timeout_ms: 500,
+        internal_call_timeout_ms: 500,
+        service_expected_uid: Some(994),
         broker_public_key_path: public_key_path.to_owned(),
         broker_issuer: BROKER_ISSUER.to_owned(),
         broker_audience: BROKER_AUDIENCE.to_owned(),
@@ -247,17 +240,15 @@ fn write_isolated_config(
             "get_access_rights".to_owned(),
             "get_link_of_object".to_owned(),
         ],
+        internal_tools: vec![
+            "mcp_internal_masking_metadata_feed".to_owned(),
+            "mcp_internal_masking_dictionary_feed".to_owned(),
+        ],
         identity_bindings: vec![MaskingIdentityBinding {
-            database_instance_id: instance_id.to_string(),
+            session: "isolated-dev-jwt-fixture".to_owned(),
             database_id: database_id.to_string(),
-            expected_kind: "server".to_owned(),
-            expected_config_id: "server".to_owned(),
-            expected_host_id: Some("fixture-host".to_owned()),
-            allowed_internal_tools: vec![
-                "mcp_internal_masking_metadata_feed".to_owned(),
-                "mcp_internal_masking_dictionary_feed".to_owned(),
-            ],
         }],
+        ..MaskingConfig::default()
     };
     let config = AppConfig {
         work_path,
@@ -314,7 +305,7 @@ async fn wait_for_listener(port: u16) {
     }
 }
 
-async fn register_fake_dev_route<S>(ws: &mut tokio_tungstenite::WebSocketStream<S>, instance: Uuid)
+async fn register_fake_dev_route<S>(ws: &mut tokio_tungstenite::WebSocketStream<S>)
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -324,7 +315,6 @@ where
         version: "1".to_owned(),
         infobase_name: "isolated-dev".to_owned(),
         ib_session_number: 1,
-        database_instance_id: Some(instance.to_string()),
         tools: vec![ToolDescriptor {
             name: "execute_query".to_owned(),
             description: None,

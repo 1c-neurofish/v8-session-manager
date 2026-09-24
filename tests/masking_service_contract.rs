@@ -7,10 +7,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use v8_session_manager::session_manager::masking::client::{
-    ClientError, FeedActivateRequest, FeedChunkPayload, FeedChunkRequest, FinalizeOutcome,
-    FinalizeRequest, MaskingServiceClient, PreflightRequest,
+    ClientError, FinalizeOutcome, FinalizeRequest, MaskingServiceClient, PreflightRequest,
 };
 use v8_session_manager::session_manager::protocol::{ToolCallResult, ToolContent};
 
@@ -21,13 +19,7 @@ fn contract_client() -> MaskingServiceClient {
     let socket = std::env::var_os("MASKING_CONTRACT_SOCKET")
         .map(PathBuf::from)
         .expect("MASKING_CONTRACT_SOCKET must point to the isolated service UDS");
-    MaskingServiceClient::new(
-        socket,
-        Duration::from_secs(3),
-        Duration::from_secs(15),
-        Duration::from_secs(10),
-        Duration::from_secs(60),
-    )
+    MaskingServiceClient::new(socket, Duration::from_secs(3), Duration::from_secs(15))
 }
 
 #[tokio::test]
@@ -82,34 +74,32 @@ async fn isolated_masking_service_wire_contract() {
             chat_id: "contract-chat".to_owned(),
             tool_name: "get_metadata".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
-                result: ToolCallResult {
-                    content: vec![
-                        ToolContent::Text {
-                            text: "contract-ok".to_owned(),
-                        },
-                        ToolContent::Json {
-                            json: json!({"status": "ok"}),
-                        },
-                    ],
-                    is_error: false,
-                    structured_content: Some(json!({"status": "ok"})),
-                },
+                // Контракт Р2: непрозрачный бизнес-результат; `data` должна
+                // доехать до сервиса и обратно без потери полей.
+                result: json!({
+                    "success": true,
+                    "data": [["contract-ok"]],
+                    "status": "ok"
+                }),
             },
-            evidence: Some(json!({
+            field_sources: Some(json!({
                 "schema": {"version": 1},
                 "lineage": [],
                 "degraded_reasons": []
             })),
         })
         .await
-        .expect("full ToolCallResult must be accepted by finalize");
+        .expect("opaque tool result must be accepted by finalize");
     assert_eq!(finalized.schema_version, 1);
     assert!(!finalized.public_result.is_error);
-    assert_eq!(finalized.public_result.content.len(), 2);
-    assert_eq!(
-        finalized.public_result.structured_content,
-        Some(json!({"status": "ok"}))
-    );
+    assert_eq!(finalized.public_result.content.len(), 1);
+    let ToolContent::Text { text } = &finalized.public_result.content[0] else {
+        panic!("public result must wrap the masked value into text content");
+    };
+    let returned: serde_json::Value =
+        serde_json::from_str(text).expect("masked public value must be valid JSON");
+    assert_eq!(returned["data"][0][0], "contract-ok");
+    assert_eq!(returned["status"], "ok");
 
     let transport = client
         .finalize(&FinalizeRequest {
@@ -122,7 +112,7 @@ async fn isolated_masking_service_wire_contract() {
             outcome: FinalizeOutcome::TransportError {
                 error: json!({"code": "fixture_transport_error"}),
             },
-            evidence: None,
+            field_sources: None,
         })
         .await
         .expect("transport error must be finalized into a public result");
@@ -138,15 +128,12 @@ async fn isolated_masking_service_wire_contract() {
         chat_id: "contract-chat".to_owned(),
         tool_name: "execute_query".to_owned(),
         outcome: FinalizeOutcome::ToolResult {
-            result: ToolCallResult {
-                content: vec![ToolContent::Text {
-                    text: format!("{over_limit_marker}{}", "x".repeat(8 * 1024 * 1024)),
-                }],
-                is_error: false,
-                structured_content: None,
-            },
+            result: json!({
+                "success": true,
+                "data": [format!("{over_limit_marker}{}", "x".repeat(8 * 1024 * 1024))]
+            }),
         },
-        evidence: None,
+        field_sources: None,
     };
     let over_limit = client
         .finalize(&over_limit_request)
@@ -161,63 +148,4 @@ async fn isolated_masking_service_wire_contract() {
         .await
         .expect("duplicate synthetic finalize must be idempotent");
     assert_eq!(over_limit_retry.public_result, over_limit.public_result);
-
-    let jobs = client
-        .feed_jobs(10)
-        .await
-        .expect("feed jobs must deserialize");
-    assert_eq!(jobs.schema_version, 1);
-    let job = jobs
-        .jobs
-        .into_iter()
-        .find(|job| job.database_id == CONFIGURED_DATABASE_ID)
-        .expect("seeded feed job must be returned");
-    assert_eq!(job.metadata_selector.mode, "all");
-    assert_eq!(job.metadata_selector.page_size, 1000);
-    assert!(job.dictionary_selectors.is_empty());
-
-    let payload = FeedChunkPayload {
-        selection_id: None,
-        page_index: 0,
-        metadata: Vec::new(),
-        dictionary_values: Vec::new(),
-        final_chunk: true,
-    };
-    let canonical =
-        br#"{"dictionary_values":[],"final_chunk":true,"metadata":[],"page_index":0,"selection_id":null}"#;
-    let chunk_digest = Sha256::digest(canonical);
-    let accepted = client
-        .feed_chunk(
-            &job.job_id,
-            0,
-            &FeedChunkRequest {
-                schema_version: 1,
-                correlation_id: "123e4567-e89b-12d3-a456-426614174109".to_owned(),
-                chunk_digest: hex::encode(chunk_digest),
-                payload,
-            },
-        )
-        .await
-        .expect("canonical feed chunk must be accepted");
-    assert_eq!(accepted.schema_version, 1);
-    assert_eq!(accepted.accepted_index, 0);
-
-    let aggregate_digest = hex::encode(Sha256::digest(chunk_digest));
-    let activated = client
-        .feed_activate(
-            &job.job_id,
-            &FeedActivateRequest {
-                schema_version: 1,
-                correlation_id: "123e4567-e89b-12d3-a456-426614174110".to_owned(),
-                expected_chunks: 1,
-                expected_metadata_count: 0,
-                expected_dictionary_count: 0,
-                aggregate_digest,
-            },
-        )
-        .await
-        .expect("feed must activate with manager digest rules");
-    assert_eq!(activated.schema_version, 1);
-    assert_eq!(activated.cache_version, job.target_version);
-    assert_eq!(activated.status, "active");
 }

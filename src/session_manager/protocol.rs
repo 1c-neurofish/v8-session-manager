@@ -262,10 +262,6 @@ pub struct SessionRegisterParams {
     /// Внутренний номер сеанса 1С (`НомерСеанса()` платформы). BC-breaking:
     /// поле обязательно (см. [`Self::validate`]).
     pub ib_session_number: u32,
-    /// Deployment-provisioned UUID установки базы. Не является agent input
-    /// и используется только manager-side identity gate.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub database_instance_id: Option<String>,
     pub tools: Vec<ToolDescriptor>,
     /// Опциональный идентификатор конфигурации клиента (ADR‑0035).
     /// Если не задан, менеджер использует `config_id == kind`. Используется
@@ -535,7 +531,6 @@ mod tests {
             version: "1.0".to_owned(),
             infobase_name: "test_db".to_owned(),
             ib_session_number: 42,
-            database_instance_id: None,
             tools: vec![ToolDescriptor {
                 name: "echo".to_owned(),
                 description: None,
