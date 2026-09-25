@@ -54,8 +54,14 @@ pub struct MaskingConfig {
     pub broker_audience: String,
     pub broker_max_assertion_ttl_secs: u64,
     pub conversation_assertion_header: String,
-    /// Набор tools, которые обязаны пройти preflight/finalize. Неизвестное
-    /// сервису имя получит `TOOL_PENDING_REVIEW`, а не raw fallback.
+    //++agent TASK-225 [25.09.2026]
+    /// УСТАРЕВШЕЕ: при `masking.enabled=true` ВСЕ публичные proxy-вызовы
+    /// проходят через сервис маскирования — список больше не влияет на
+    /// маршрут (решение пользователя: единая точка контроля, исключения
+    /// настраиваются классификацией в админке сервиса, а не конфигом MCP).
+    /// Поле оставлено для совместимости десериализации старых конфигов;
+    /// непустое значение — предупреждение в логе при старте gate.
+    //++agent TASK-225
     pub managed_tools: Vec<String>,
     /// Имена внутренних tools mcp_tools. Не публикуются агенту в tools/list,
     /// вызов агентом отклоняется; вызываются только сервисом маскирования
@@ -82,14 +88,11 @@ impl Default for MaskingConfig {
             broker_audience: "v8-session-manager".to_owned(),
             broker_max_assertion_ttl_secs: 300,
             conversation_assertion_header: "x-v8-conversation-assertion".to_owned(),
-            managed_tools: vec![
-                "execute_query".to_owned(),
-                "find_references_to_object".to_owned(),
-                "get_object_by_link".to_owned(),
-                "get_metadata".to_owned(),
-                "get_access_rights".to_owned(),
-                "get_link_of_object".to_owned(),
-            ],
+            //++agent TASK-225 [25.09.2026]
+            // Устаревшее поле: пустой default, чтобы отсутствие ключа в
+            // конфиге не порождало ложное deprecation-предупреждение.
+            //++agent TASK-225
+            managed_tools: Vec::new(),
             internal_tools: vec![
                 "mcp_internal_masking_metadata_feed".to_owned(),
                 "mcp_internal_masking_dictionary_feed".to_owned(),

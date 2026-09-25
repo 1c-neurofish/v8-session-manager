@@ -479,11 +479,10 @@ async fn handle_request(
             // ставит менеджер — иначе 1С могла бы спрятать managed tool.
             // Adapter-declared `Internal` сохраняется и без gate: ограничение
             // видимости никогда не расширяется до public.
-            match state.masking_gate.as_ref() {
-                Some(gate) => gate.normalize_tools(&mut parsed.tools),
-                // Без gate конфигурации internal-имён нет: adapter-declared
-                // `Internal` сохраняется как fail-safe.
-                None => {}
+            // Без gate конфигурации internal-имён нет: adapter-declared
+            // `Internal` сохраняется как fail-safe.
+            if let Some(gate) = state.masking_gate.as_ref() {
+                gate.normalize_tools(&mut parsed.tools);
             }
             match state
                 .registry
@@ -587,11 +586,10 @@ async fn handle_notification(
             // Та же нормализация, что и при register: internal-метка ставится
             // по имени из конфига, adapter-provided `Public` не доверена,
             // adapter-declared `Internal` сохраняется как fail-safe.
-            match state.masking_gate.as_ref() {
-                Some(gate) => gate.normalize_tools(&mut parsed.tools),
-                // Без gate: adapter-declared `Internal` сохраняется как
-                // fail-safe (см. register).
-                None => {}
+            // Без gate: adapter-declared `Internal` сохраняется как
+            // fail-safe (см. register).
+            if let Some(gate) = state.masking_gate.as_ref() {
+                gate.normalize_tools(&mut parsed.tools);
             }
             state.registry.update_tools(&session_id, parsed.tools);
         }

@@ -488,9 +488,14 @@ impl McpToolServer {
                         Some(cache_hit),
                     ));
                 }
-                return Err(ErrorData::method_not_found::<
-                    rmcp::model::CallToolRequestMethod,
-                >());
+                //++agent TASK-225 [25.09.2026]
+                // Неизвестное имя — structured tool error вместо JSON-RPC
+                // method_not_found: протокольная ошибка уходит агенту без
+                // content-блока (клиенты показывают "no text content"),
+                // а несуществующий инструмент — это ошибка вызова, а не
+                // протокола. Поведение симметрично no_live_session (ADR-0035).
+                //++agent TASK-225
+                return Ok(unknown_tool_response(request.name.as_ref()));
             }
         };
         let rec = self
@@ -511,16 +516,19 @@ impl McpToolServer {
                 None,
             ));
         }
-        let managed = self
-            .masking_gate
-            .is_managed_for(&rec, request.name.as_ref());
-        let (masking_context, arguments) = if managed {
+        //++agent TASK-225 [25.09.2026]
+        // При masking.enabled каждый публичный proxy tools/call идёт через
+        // gate — managed_tools больше не участвует в маршруте. Проверка
+        // привязки к database_id идёт ПЕРВОЙ: непривязанная сессия получает
+        // DATABASE_IDENTITY_UNVERIFIED даже при отсутствующем assertion.
+        //++agent TASK-225
+        let (masking_context, arguments) = if self.masking_gate.is_enabled() {
             let call_id = uuid::Uuid::new_v4().to_string();
             let correlation_id = uuid::Uuid::new_v4().to_string();
-            let Some(conversation) = trusted_conversation.as_ref() else {
+            let Some(identity) = self.masking_gate.verify_database(&rec) else {
                 let failure = MaskingFailure::with_correlation(
-                    "CHAT_IDENTITY_REQUIRED",
-                    "Для операции требуется подтверждённый контекст диалога",
+                    "DATABASE_IDENTITY_UNVERIFIED",
+                    "Идентичность базы не подтверждена",
                     correlation_id.clone(),
                 );
                 let terminal = self.masking_gate.unverified_terminal(
@@ -538,10 +546,10 @@ impl McpToolServer {
                 }
                 return Ok(masking_failure_response(failure));
             };
-            let Some(identity) = self.masking_gate.verify_database(&rec) else {
+            let Some(conversation) = trusted_conversation.as_ref() else {
                 let failure = MaskingFailure::with_correlation(
-                    "DATABASE_IDENTITY_UNVERIFIED",
-                    "Идентичность базы не подтверждена",
+                    "CHAT_IDENTITY_REQUIRED",
+                    "Для операции требуется подтверждённый контекст диалога",
                     correlation_id.clone(),
                 );
                 let terminal = self.masking_gate.unverified_terminal(
@@ -594,12 +602,23 @@ impl McpToolServer {
             .enqueue(connection, params, deadline, cancellation.clone())
             .await;
         if let Some(masking_context) = masking_context.as_ref() {
+            //++agent TASK-225 [25.09.2026]
+            // Результат без конверта границы данных — непрозрачный JSON
+            // (весь ToolCallResult) с пустыми field_sources: конверт
+            // требуется только для data-mask класса; сломанный конверт
+            // (есть schema_version, но не валиден) — fail-closed отказ,
+            // а не opaque-проход.
+            //++agent TASK-225
             let (finalize_outcome, field_sources) = match outcome {
-                Ok(result) => match extract_masking_envelope(result) {
-                    Ok((result, field_sources)) => {
-                        (FinalizeOutcome::ToolResult { result }, Some(field_sources))
+                Ok(result) => match extract_tool_payload(result) {
+                    ToolPayload::Envelope {
+                        result,
+                        field_sources,
+                    } => (FinalizeOutcome::ToolResult { result }, Some(field_sources)),
+                    ToolPayload::Opaque { result } => {
+                        (FinalizeOutcome::ToolResult { result }, None)
                     }
-                    Err(code) => (transport_error_outcome(code), None),
+                    ToolPayload::Malformed { code } => (transport_error_outcome(code), None),
                 },
                 Err(ref error) => (transport_error_outcome(dispatcher_error_code(error)), None),
             };
@@ -639,21 +658,79 @@ struct MaskingResultEnvelope {
     field_sources: serde_json::Value,
 }
 
-fn extract_masking_envelope(
-    outer: ToolCallResult,
-) -> Result<(serde_json::Value, serde_json::Value), &'static str> {
-    let Some(crate::session_manager::protocol::ToolContent::Text { text }) =
-        outer.content.into_iter().next()
-    else {
-        return Err("RESULT_INVALID");
-    };
-    let envelope: MaskingResultEnvelope =
-        serde_json::from_str(&text).map_err(|_| "RESULT_INVALID")?;
-    if envelope.schema_version != 1 {
-        return Err("RESULT_INVALID");
-    }
-    Ok((envelope.result, envelope.field_sources))
+//++agent TASK-225 [25.09.2026]
+/// Разбор результата proxy-вызова для finalize: конверт границы данных
+/// ИЛИ непрозрачный результат. Третьего пути нет — сырой ответ агенту
+/// минуя сервис не возвращается.
+enum ToolPayload {
+    /// Валидный конверт {schema_version:1, result, field_sources}.
+    Envelope {
+        result: serde_json::Value,
+        field_sources: serde_json::Value,
+    },
+    /// Результат без конверта: весь ToolCallResult как JSON
+    /// ({content, is_error, structured_content}), field_sources пустые.
+    Opaque { result: serde_json::Value },
+    /// Текст объявляет конверт (top-level `schema_version`/`field_sources`),
+    /// но не соответствует контракту — fail-closed, opaque не спасает.
+    Malformed { code: &'static str },
 }
+
+fn extract_tool_payload(outer: ToolCallResult) -> ToolPayload {
+    // Претензия на конверт — top-level ключи-маркеры конверта в первом
+    // text-блоке. `field_sources` — специфичное для конверта имя;
+    // одиночный `result` — обычное поле бизнес-JSON и признаком не служит.
+    let claims_envelope = outer
+        .content
+        .first()
+        .and_then(|content| match content {
+            crate::session_manager::protocol::ToolContent::Text { text } => {
+                serde_json::from_str::<serde_json::Value>(text).ok()
+            }
+            crate::session_manager::protocol::ToolContent::Json { .. } => None,
+        })
+        .and_then(|value| {
+            let object = value.as_object()?;
+            (object.contains_key("schema_version") || object.contains_key("field_sources"))
+                .then_some(())
+        })
+        .is_some();
+    if claims_envelope {
+        let Some(crate::session_manager::protocol::ToolContent::Text { text }) =
+            outer.content.into_iter().next()
+        else {
+            return ToolPayload::Malformed {
+                code: "RESULT_INVALID",
+            };
+        };
+        let envelope: MaskingResultEnvelope = match serde_json::from_str(&text) {
+            Ok(envelope) => envelope,
+            Err(_) => {
+                return ToolPayload::Malformed {
+                    code: "RESULT_INVALID",
+                }
+            }
+        };
+        if envelope.schema_version != 1 {
+            return ToolPayload::Malformed {
+                code: "RESULT_INVALID",
+            };
+        }
+        return ToolPayload::Envelope {
+            result: envelope.result,
+            field_sources: envelope.field_sources,
+        };
+    }
+    // Opaque: ToolCallResult сериализуется детерминированно (serde),
+    // падение невозможно — но неизменяемость лучше panic.
+    match serde_json::to_value(&outer) {
+        Ok(result) => ToolPayload::Opaque { result },
+        Err(_) => ToolPayload::Malformed {
+            code: "RESULT_INVALID",
+        },
+    }
+}
+//++agent TASK-225
 
 fn dispatcher_error_code(error: &DispatcherError) -> &'static str {
     match error {
@@ -895,12 +972,129 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             structured_content: None,
         };
 
-        let (unwrapped, field_sources) = extract_masking_envelope(outer).unwrap();
+        //++agent TASK-225 [25.09.2026]: extract_tool_payload — Envelope.
+        let ToolPayload::Envelope {
+            result: unwrapped,
+            field_sources,
+        } = extract_tool_payload(outer)
+        else {
+            panic!("expected envelope payload");
+        };
+        //++agent TASK-225
         assert_eq!(unwrapped, inner);
         assert_eq!(unwrapped["data"][0][1], json!(42));
         assert_eq!(unwrapped["custom_shape"]["nested"], json!([1, 2, 3]));
         assert_eq!(field_sources["schema"]["columns"], json!([]));
     }
+
+    //++agent TASK-225 [25.09.2026]
+    // Результат без конверта — opaque: сервису уходит весь ToolCallResult
+    // (включая is_error) как непрозрачный JSON.
+    #[test]
+    fn opaque_result_without_envelope_passes_whole_result() {
+        let outer = ToolCallResult {
+            content: vec![crate::session_manager::protocol::ToolContent::Text {
+                text: "plain text answer".to_owned(),
+            }],
+            is_error: true,
+            structured_content: None,
+        };
+        let ToolPayload::Opaque { result } = extract_tool_payload(outer) else {
+            panic!("expected opaque payload");
+        };
+        assert_eq!(result["is_error"], json!(true));
+        assert_eq!(result["content"][0]["text"], json!("plain text answer"));
+
+        // JSON без маркеров конверта — тоже opaque (одиночный `result` —
+        // обычное имя поля бизнес-JSON, конверт не объявляет).
+        let outer = ToolCallResult {
+            content: vec![crate::session_manager::protocol::ToolContent::Text {
+                text: serde_json::to_string(&json!({"result": {"rows": 5}})).unwrap(),
+            }],
+            is_error: false,
+            structured_content: None,
+        };
+        let ToolPayload::Opaque { result } = extract_tool_payload(outer) else {
+            panic!("expected opaque payload");
+        };
+        assert!(result.get("is_error").is_none());
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("rows"));
+
+        // Первый блок не text / content пуст — opaque, а не отказ.
+        let outer = ToolCallResult {
+            content: vec![],
+            is_error: false,
+            structured_content: Some(json!({"a": 1})),
+        };
+        assert!(matches!(
+            extract_tool_payload(outer),
+            ToolPayload::Opaque { .. }
+        ));
+
+        // text — JSON-строковый литерал ("{...}": бизнес-result-строка от
+        // границы до исправления двойной сериализации) — opaque; менеджер
+        // не трогает содержимое, text идёт в сервис дословно.
+        let business = "{\"valid\": true}";
+        let quoted = serde_json::to_string(&json!(business)).unwrap();
+        let outer = ToolCallResult {
+            content: vec![crate::session_manager::protocol::ToolContent::Text {
+                text: quoted.clone(),
+            }],
+            is_error: false,
+            structured_content: None,
+        };
+        let ToolPayload::Opaque { result } = extract_tool_payload(outer) else {
+            panic!("expected opaque payload");
+        };
+        assert_eq!(result["content"][0]["text"], json!(quoted));
+
+        // text — сериализованный JSON-объект (исправленная граница):
+        // тоже opaque, без пересборки.
+        let raw_json = "{\"valid\": true}";
+        let outer = ToolCallResult {
+            content: vec![crate::session_manager::protocol::ToolContent::Text {
+                text: raw_json.to_owned(),
+            }],
+            is_error: false,
+            structured_content: None,
+        };
+        let ToolPayload::Opaque { result } = extract_tool_payload(outer) else {
+            panic!("expected opaque payload");
+        };
+        assert_eq!(result["content"][0]["text"], json!(raw_json));
+    }
+
+    #[test]
+    fn claimed_but_malformed_envelope_is_fail_closed_not_opaque() {
+        for text in [
+            // schema_version есть — конверт заявлен; невалиден → отказ.
+            serde_json::to_string(&json!({"schema_version": 2, "result": {}, "field_sources": {}}))
+                .unwrap(),
+            serde_json::to_string(
+                &json!({"schema_version": 1, "result": {"content": [], "is_error": false}}),
+            )
+            .unwrap(),
+            serde_json::to_string(&json!({"schema_version": 1})).unwrap(),
+            // field_sources — специфичный ключ конверта; без остального — сломан.
+            serde_json::to_string(&json!({"field_sources": {"schema": {}}})).unwrap(),
+        ] {
+            let outer = ToolCallResult {
+                content: vec![crate::session_manager::protocol::ToolContent::Text { text }],
+                is_error: false,
+                structured_content: None,
+            };
+            assert!(matches!(
+                extract_tool_payload(outer),
+                ToolPayload::Malformed {
+                    code: "RESULT_INVALID"
+                }
+            ));
+        }
+    }
+    //++agent TASK-225
 
     #[test]
     fn reserved_v8_meta_is_removed_without_touching_tool_arguments() {
@@ -919,45 +1113,6 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             request["params"]["arguments"]["_meta"]["v8.business"],
             "untouched"
         );
-    }
-
-    #[test]
-    fn masking_envelope_rejects_missing_or_malformed_text_envelope() {
-        // Нет text-блока вообще.
-        let empty = ToolCallResult {
-            content: vec![],
-            is_error: false,
-            structured_content: Some(json!({
-                "schema_version": 1,
-                "result": {"content": [], "is_error": false},
-                "field_sources": {}
-            })),
-        };
-        assert_eq!(extract_masking_envelope(empty), Err("RESULT_INVALID"));
-
-        // Первый блок — не text.
-        let json_first = ToolCallResult {
-            content: vec![crate::session_manager::protocol::ToolContent::Json {
-                json: json!({"schema_version": 1}),
-            }],
-            is_error: false,
-            structured_content: None,
-        };
-        assert_eq!(extract_masking_envelope(json_first), Err("RESULT_INVALID"));
-
-        // Text не JSON-конверт и конверт без обязательных полей.
-        for text in [
-            "not-json".to_owned(),
-            serde_json::to_string(&json!({"schema_version": 2, "result": {"content": [], "is_error": false}, "field_sources": {}})).unwrap(),
-            serde_json::to_string(&json!({"schema_version": 1, "result": {"content": [], "is_error": false}})).unwrap(),
-        ] {
-            let outer = ToolCallResult {
-                content: vec![crate::session_manager::protocol::ToolContent::Text { text }],
-                is_error: false,
-                structured_content: None,
-            };
-            assert_eq!(extract_masking_envelope(outer), Err("RESULT_INVALID"));
-        }
     }
 
     #[test]
@@ -1085,6 +1240,133 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             .unwrap()
             .contains("raw-marker-must-never-enter-terminal-ledger"));
     }
+
+    //++agent TASK-225 [25.09.2026]
+    // Gate при enabled покрывает КАЖДЫЙ публичный proxy-вызов: имя
+    // инструмента из бывшего managed_tools списка роли не играет, а
+    // непривязанная к database_id сессия отклоняется до проверки
+    // conversation assertion. Internal tools до gate не доходят —
+    // resolve_published их не публикует.
+    #[tokio::test]
+    async fn all_public_calls_route_through_gate_and_unbound_is_denied() {
+        let temp = tempfile::tempdir().unwrap();
+        let public_key_path = temp.path().join("broker.pub.pem");
+        std::fs::write(&public_key_path, TEST_BROKER_PUBLIC_KEY).unwrap();
+        let database_id = uuid::Uuid::new_v4();
+        let masking = crate::config::model::MaskingConfig {
+            enabled: true,
+            socket_path: temp.path().join("service-not-running.sock"),
+            internal_listen_path: temp.path().join("manager.sock"),
+            service_expected_uid: Some(994),
+            broker_public_key_path: public_key_path,
+            identity_bindings: vec![MaskingIdentityBinding {
+                session: "dev-trusted".to_owned(),
+                database_id: database_id.to_string(),
+            }],
+            ..Default::default()
+        };
+        let config = Arc::new(AppConfig {
+            work_path: PathBuf::from(temp.path()),
+            mcp: McpConfig::default(),
+            tools_cache: ToolsCacheConfig::default(),
+            masking,
+        });
+        let registry = Arc::new(SessionRegistry::new());
+        let server = McpToolServer::try_new(config)
+            .unwrap()
+            .with_session_registry(Arc::clone(&registry));
+
+        // Привязанная сессия: публичный и internal инструменты.
+        registry
+            .register(
+                SessionRegisterParams {
+                    client_uid: "dev-trusted".to_owned(),
+                    kind: "server".to_owned(),
+                    version: "1".to_owned(),
+                    infobase_name: "dev".to_owned(),
+                    ib_session_number: 1,
+                    tools: vec![
+                        ToolDescriptor {
+                            name: "brand_new_tool".to_owned(),
+                            description: None,
+                            input_schema: json!({"type":"object"}),
+                            visibility: Default::default(),
+                        },
+                        ToolDescriptor {
+                            name: "mcp_internal_masking_metadata_feed".to_owned(),
+                            description: None,
+                            input_schema: json!({"type":"object"}),
+                            visibility: crate::session_manager::protocol::ToolVisibility::Internal,
+                        },
+                    ],
+                    config_id: Some("server".to_owned()),
+                    host_id: Some("dev-host".to_owned()),
+                    pid: None,
+                    resources: None,
+                    prompts: None,
+                    extras: None,
+                },
+                Instant::now(),
+                None,
+            )
+            .unwrap();
+        // Непривязанная сессия (identity_bindings её не знает).
+        register_fake_session(&registry, "unbound-session", &["any_tool"]);
+
+        // Инструмент вне бывшего managed_tools — доходит до gate:
+        // отказ по отсутствию conversation assertion, а не raw-вызов в 1С.
+        let request = CallToolRequestParams::new("brand_new_tool");
+        let denied = server
+            .call_proxy_tool_inner(request, CancellationToken::new(), None)
+            .await
+            .unwrap();
+        assert_eq!(denied.is_error, Some(true));
+        assert_eq!(
+            denied.structured_content.unwrap()["error"]["code"],
+            "CHAT_IDENTITY_REQUIRED"
+        );
+
+        // Сессия без привязки — DATABASE_IDENTITY_UNVERIFIED даже без
+        // assertion (проверка привязки идёт первой).
+        let request = CallToolRequestParams::new("any_tool");
+        let denied = server
+            .call_proxy_tool_inner(request, CancellationToken::new(), None)
+            .await
+            .unwrap();
+        assert_eq!(denied.is_error, Some(true));
+        assert_eq!(
+            denied.structured_content.unwrap()["error"]["code"],
+            "DATABASE_IDENTITY_UNVERIFIED"
+        );
+
+        // Internal tool агенту не доступен: resolve не находит его в
+        // публичной витрине — вызов завершается до gate structured
+        // ошибкой unknown_tool (не protocol error и не вызов в 1С).
+        let request = CallToolRequestParams::new("mcp_internal_masking_metadata_feed");
+        let denied = server
+            .call_proxy_tool_inner(request, CancellationToken::new(), None)
+            .await
+            .unwrap();
+        assert_eq!(denied.is_error, Some(true));
+        assert_eq!(
+            denied.structured_content.unwrap()["_meta"]["error_code"],
+            "unknown_tool"
+        );
+
+        // Совсем неизвестное имя (нет ни в live, ни в tools cache) —
+        // тот же structured unknown_tool вместо method_not_found.
+        let request = CallToolRequestParams::new("get_1c_version_probe");
+        let denied = server
+            .call_proxy_tool_inner(request, CancellationToken::new(), None)
+            .await
+            .unwrap();
+        assert_eq!(denied.is_error, Some(true));
+        assert_eq!(
+            denied.structured_content.unwrap()["_meta"]["error_code"],
+            "unknown_tool"
+        );
+    }
+    //++agent TASK-225
 }
 
 /// Хит в persistent cache: какому `(kind, config_id)` соответствует tool.
@@ -1147,6 +1429,28 @@ fn no_live_session_response(tool_name: &str, cache_hit: Option<CacheHit>) -> Cal
     });
     CallToolResult::structured_error(payload)
 }
+
+//++agent TASK-225 [25.09.2026]
+/// Structured tool error для имени, которого нет ни в live-сессиях, ни в
+/// persistent tools cache: агент получает читаемый text-блок и
+/// `_meta.error_code="unknown_tool"` вместо протокольной ошибки.
+fn unknown_tool_response(tool_name: &str) -> CallToolResult {
+    let payload = serde_json::json!({
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "Tool '{tool_name}' is unavailable: unknown tool name.",
+            )
+        }],
+        "isError": true,
+        "_meta": {
+            "error_code": "unknown_tool",
+            "tool": tool_name,
+        },
+    });
+    CallToolResult::structured_error(payload)
+}
+//++agent TASK-225
 
 fn dispatcher_outcome_to_call_result(
     outcome: Result<ToolCallResult, DispatcherError>,

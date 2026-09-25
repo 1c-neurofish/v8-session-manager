@@ -37,9 +37,6 @@ pub enum ConfigValidationError {
     #[error("masking.{0} must be greater than zero")]
     InvalidMaskingTimeout(&'static str),
 
-    #[error("masking.managed_tools must contain unique non-empty names")]
-    InvalidManagedTools,
-
     #[error("masking.internal_tools must contain unique non-empty names")]
     InvalidInternalTools,
 
@@ -124,33 +121,11 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
                 "internal_call_timeout_ms",
             ));
         }
-        let mut tools = std::collections::HashSet::new();
-        if config.masking.managed_tools.is_empty()
-            || config
-                .masking
-                .managed_tools
-                .iter()
-                .any(|name| name.is_empty() || !tools.insert(name))
-        {
-            return Err(ConfigValidationError::InvalidManagedTools);
-        }
-        let required_tools = [
-            "execute_query",
-            "find_references_to_object",
-            "get_object_by_link",
-            "get_metadata",
-            "get_access_rights",
-            "get_link_of_object",
-        ]
-        .into_iter()
-        .collect::<std::collections::HashSet<_>>();
-        if tools.len() != required_tools.len()
-            || !tools
-                .iter()
-                .all(|name| required_tools.contains(name.as_str()))
-        {
-            return Err(ConfigValidationError::InvalidManagedTools);
-        }
+        //++agent TASK-225 [25.09.2026]
+        // managed_tools устарел: при enabled=true через gate идут ВСЕ
+        // публичные proxy-вызовы, список не влияет на маршрут и не
+        // валидируется (старое требование ровно шести имён удалено).
+        //++agent TASK-225
         let mut internal_tools = std::collections::HashSet::new();
         if config.masking.internal_tools.is_empty()
             || config

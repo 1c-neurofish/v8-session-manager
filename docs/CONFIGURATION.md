@@ -60,13 +60,6 @@ masking:
   broker_audience: v8-session-manager
   broker_max_assertion_ttl_secs: 300
   conversation_assertion_header: x-v8-conversation-assertion
-  managed_tools:
-    - execute_query
-    - find_references_to_object
-    - get_object_by_link
-    - get_metadata
-    - get_access_rights
-    - get_link_of_object
   internal_tools:
     - mcp_internal_masking_metadata_feed
     - mcp_internal_masking_dictionary_feed
@@ -136,12 +129,18 @@ broker-а и хотя бы одна session-name identity binding. Manager пр�
 `aud=v8-session-manager`, `iat`, `exp` и максимальный TTL. Tool arguments
 и MCP `_meta` источниками chat identity не являются.
 
-`managed_tools` должен содержать ровно шесть имён: `execute_query`,
-`find_references_to_object`, `get_object_by_link`, `get_metadata`,
-`get_access_rights`, `get_link_of_object`. Все шесть проходят preflight и
-finalize, поэтому masked history создаётся автоматически и для bypass tools.
-Первые три классифицируются сервисом как `data-mask`, последние три — как
-`metadata/non-data-bypass`.
+При `enabled: true` **каждый** публичный proxy `tools/call` проходит через
+сервис маскирования (preflight + finalize) — единая точка контроля.
+Классификация инструментов (`data-mask`, `metadata-bypass`,
+`deny-pending-review`) настраивается в административном API сервиса, а не
+конфигом менеджера: неизвестный сервису инструмент отклоняется до вызова 1С
+как `deny-pending-review` и автоматически попадает в очередь классификации.
+Сессия без привязки к `database_id` отклоняется
+`DATABASE_IDENTITY_UNVERIFIED` до проверки conversation assertion.
+
+`managed_tools` — **устаревшее** поле: оставлено для совместимости со
+старыми конфигами, на маршрут не влияет и не валидируется; непустое
+значение порождает предупреждение в логе при старте gate.
 
 `internal_tools` — ровно два internal tool адаптера
 (`mcp_internal_masking_metadata_feed`, `mcp_internal_masking_dictionary_feed`),

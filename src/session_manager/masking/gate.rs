@@ -212,7 +212,6 @@ fn valid_terminal(event: &TerminalRequest) -> bool {
 #[derive(Clone)]
 pub struct MaskingGate {
     enabled: bool,
-    managed_tools: Arc<HashSet<String>>,
     /// Имена internal tools (`masking.internal_tools`): не публикуются
     /// агенту и вызываются только через internal UDS endpoint.
     internal_tools: Arc<HashSet<String>>,
@@ -235,7 +234,6 @@ impl MaskingGate {
         if !config.enabled {
             return Ok(Self {
                 enabled: false,
-                managed_tools: Arc::new(HashSet::new()),
                 internal_tools: Arc::new(config.internal_tools.iter().cloned().collect()),
                 identity: Arc::new(IdentityResolver::new(&[])),
                 client: None,
@@ -257,9 +255,18 @@ impl MaskingGate {
         validation.set_issuer(&[config.broker_issuer.as_str()]);
         validation.validate_exp = true;
         validation.leeway = 0;
+        //++agent TASK-225 [25.09.2026]
+        // managed_tools устарел и на маршрут не влияет: все публичные
+        // proxy-вызовы идут через gate; непустое значение — deprecation
+        // warning, не ошибка (совместимость со старыми конфигами).
+        //++agent TASK-225
+        if !config.managed_tools.is_empty() {
+            tracing::warn!(
+                "masking.managed_tools is deprecated and ignored: all public proxy calls go through the masking gate"
+            );
+        }
         Ok(Self {
             enabled: true,
-            managed_tools: Arc::new(config.managed_tools.iter().cloned().collect()),
             internal_tools: Arc::new(config.internal_tools.iter().cloned().collect()),
             identity: Arc::new(IdentityResolver::new(&config.identity_bindings)),
             client: Some(MaskingServiceClient::new(
@@ -281,15 +288,6 @@ impl MaskingGate {
             service_expected_uid: config.service_expected_uid,
             internal_call_timeout: Duration::from_millis(config.internal_call_timeout_ms),
         })
-    }
-
-    /// Gate относится только к deployment-configured route: managed tool на
-    /// сессии, которой конфиг привязал `database_id`. Прочие сессии продолжают
-    /// прежний proxy path.
-    pub fn is_managed_for(&self, record: &SessionRecord, tool_name: &str) -> bool {
-        self.enabled
-            && self.managed_tools.contains(tool_name)
-            && self.identity.verify(record).is_some()
     }
 
     /// Помечает visibility каждого tool по имени из конфига — единственная
@@ -325,6 +323,13 @@ impl MaskingGate {
         self.internal_call_timeout
     }
 
+    //++agent TASK-225 [25.09.2026]
+    /// При `masking.enabled=true` КАЖДЫЙ публичный proxy `tools/call` идёт
+    /// через gate (единая точка контроля; исключения — классификацией в
+    /// сервисе). Привязка сессии к `database_id` проверяется внутри ветки
+    /// вызова: непривязанная сессия получает DATABASE_IDENTITY_UNVERIFIED,
+    /// а не raw-bypass вокруг маскировщика.
+    //++agent TASK-225
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
@@ -762,18 +767,25 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     }
 
     #[test]
-    fn masking_scope_is_name_bound_route_and_visibility_is_normalized_by_config() {
+    fn masking_scope_covers_all_tools_and_visibility_is_normalized_by_config() {
         let database = Uuid::new_v4();
         let gate = gate_for("dev-trusted", database);
         let registry = SessionRegistry::new();
 
+        //++agent TASK-225 [25.09.2026]
+        // Все публичные proxy-вызовы идут через gate при enabled — имя
+        // инструмента и наличие в бывшем managed_tools роли не играют.
+        // Привязка сессии к database_id отдельна: verify_database для
+        // непривязанной сессии → None → DATABASE_IDENTITY_UNVERIFIED.
+        //++agent TASK-225
+        assert!(gate.is_enabled());
         let legacy = registration(
             "prod-legacy",
             vec![tool("execute_query", ToolVisibility::Public)],
         );
         registry.register(legacy, Instant::now(), None).unwrap();
         let legacy = registry.get("prod-legacy").unwrap();
-        assert!(!gate.is_managed_for(&legacy, "execute_query"));
+        assert!(gate.verify_database(&legacy).is_none());
 
         // adapter-provided `Public` не доверен для имён из конфига;
         // adapter-declared `Internal` сохраняется как fail-safe
@@ -788,8 +800,6 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         gate.normalize_tools(&mut dev.tools);
         registry.register(dev, Instant::now(), None).unwrap();
         let dev = registry.get("dev-trusted").unwrap();
-        assert!(gate.is_managed_for(&dev, "execute_query"));
-        assert!(!gate.is_managed_for(&dev, "unmanaged_tool"));
         assert_eq!(
             gate.verify_database(&dev),
             Some(VerifiedDatabaseIdentity {
@@ -807,7 +817,6 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         registry.register(other, Instant::now(), None).unwrap();
         let other = registry.get("unknown-session").unwrap();
         assert!(gate.verify_database(&other).is_none());
-        assert!(!gate.is_managed_for(&other, "execute_query"));
     }
 
     #[test]

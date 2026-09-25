@@ -277,9 +277,14 @@ Tool `session_list` (единственный встроенный tool мене
 
 При `masking.enabled: true` manager требует проверенный short-lived JWT/JWS
 диалога, session-name привязку `client_uid → database_id` из конфига
-и успешно завершённые preflight/finalize. Любая ошибка закрывает вызов до выдачи
-результата; raw fallback отсутствует. Agent-facing параметры маскирования,
-history IDs и controls не добавляются.
+и успешно завершённые preflight/finalize **для каждого** публичного proxy
+`tools/call` — исключения задаются классификацией инструментов в админке
+сервиса (`managed_tools` в конфиге устарел и игнорируется). Непривязанная
+сессия отклоняется `DATABASE_IDENTITY_UNVERIFIED` до проверки assertion;
+неизвестный сервису инструмент отклоняется до вызова 1С и регистрируется
+в очереди классификации. Любая ошибка закрывает вызов до выдачи результата;
+raw fallback отсутствует. Agent-facing параметры маскирования, history IDs
+и controls не добавляются.
 
 Сервис маскирования загружает словарь через manager-owned UDS endpoint
 `POST /internal/v1/tools/call` (`masking.internal_listen_path`), доступный

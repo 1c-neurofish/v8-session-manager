@@ -248,7 +248,6 @@ fn write_isolated_config(
             session: "isolated-dev-jwt-fixture".to_owned(),
             database_id: database_id.to_string(),
         }],
-        ..MaskingConfig::default()
     };
     let config = AppConfig {
         work_path,

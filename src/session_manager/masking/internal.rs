@@ -295,17 +295,19 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     ) -> Arc<MaskingGate> {
         let public_key_path = dir.path().join("broker.pub.pem");
         std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
-        let mut config = MaskingConfig::default();
-        config.enabled = true;
-        config.socket_path = dir.path().join("service.sock");
-        config.internal_listen_path = dir.path().join("manager.sock");
-        config.internal_call_timeout_ms = 2_000;
-        config.service_expected_uid = Some(expected_uid);
-        config.broker_public_key_path = public_key_path;
-        config.identity_bindings = vec![MaskingIdentityBinding {
-            session: session.to_owned(),
-            database_id: database.to_string(),
-        }];
+        let config = MaskingConfig {
+            enabled: true,
+            socket_path: dir.path().join("service.sock"),
+            internal_listen_path: dir.path().join("manager.sock"),
+            internal_call_timeout_ms: 2_000,
+            service_expected_uid: Some(expected_uid),
+            broker_public_key_path: public_key_path,
+            identity_bindings: vec![MaskingIdentityBinding {
+                session: session.to_owned(),
+                database_id: database.to_string(),
+            }],
+            ..MaskingConfig::default()
+        };
         Arc::new(MaskingGate::from_config(&config, dir.path()).unwrap())
     }
 

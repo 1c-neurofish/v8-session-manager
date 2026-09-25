@@ -59,11 +59,18 @@
 4. WS-фрейм → addin → devkit BSL → handler в прикладном расширении.
 5. Результат поднимается обратно по той же цепочке.
 
-Для шести masking-managed tools перед шагом 3 manager проверяет broker assertion
-и identity базы, затем выполняет service preflight. После шага 4 manager требует
-внутренний secret-cut envelope и всегда вызывает finalize — в том числе для
-ошибок и metadata bypass. Агент получает только `public_result` сервиса. Ошибка
-на любом звене даёт фиксированный sanitized error без raw fallback.
+При `masking.enabled=true` шаг preflight/finalize выполняется для **каждого**
+публичного proxy tool (единая точка контроля; исключения назначаются
+классификацией в админке сервиса, а не конфигом менеджера — устаревший
+`managed_tools` на маршрут не влияет). Перед шагом 3 manager проверяет
+сначала привязку session → `database_id` (непривязанная сессия отклоняется
+`DATABASE_IDENTITY_UNVERIFIED` даже без broker assertion), затем broker
+assertion, затем выполняет service preflight. После шага 4 manager извлекает
+конверт результата, если он есть; результат без конверта границы данных
+передаётся сервису как непрозрачный JSON с пустыми `field_sources`, а
+сломанный конверт — как безопасный отказ. Агент получает только
+`public_result` сервиса. Ошибка на любом звене даёт фиксированный sanitized
+error без raw fallback.
 
 Сервис маскирования загружает словарь самостоятельно: через UDS endpoint
 `POST /internal/v1/tools/call` (`masking.internal_listen_path`) он вызывает

@@ -10,7 +10,7 @@ use serde_json::json;
 use v8_session_manager::session_manager::masking::client::{
     ClientError, FinalizeOutcome, FinalizeRequest, MaskingServiceClient, PreflightRequest,
 };
-use v8_session_manager::session_manager::protocol::{ToolCallResult, ToolContent};
+use v8_session_manager::session_manager::protocol::ToolContent;
 
 const CONFIGURED_DATABASE_ID: &str = "123e4567-e89b-12d3-a456-426614174000";
 const UNKNOWN_DATABASE_ID: &str = "123e4567-e89b-12d3-a456-426614174099";
