@@ -484,6 +484,42 @@ async fn handle_request(
             if let Some(gate) = state.masking_gate.as_ref() {
                 gate.normalize_tools(&mut parsed.tools);
             }
+            //++agent TASK-225 [26.09.2026] O2: ключ базы вычисляется
+            // менеджером при регистрации — один проход RAS-резолюции по
+            // `cluster_server`+`infobase_name`; результат с провода
+            // игнорируется (`serde skip`). RAS недоступен → generated-
+            // ключ `gen:<srvr>/<ref>` verbatim; регистрация не блокируется.
+            if let (Some(gate), Some(cluster_server)) = (
+                state.masking_gate.as_ref(),
+                parsed
+                    .cluster_server
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty()),
+            ) {
+                let resolved = match gate.ras_resolver() {
+                    Some(resolver) => {
+                        let resolved = resolver
+                            .resolve(cluster_server, &parsed.infobase_name)
+                            .await;
+                        if resolved.is_none() {
+                            tracing::warn!(
+                                cluster_server,
+                                infobase = %parsed.infobase_name,
+                                "masking: RAS identity resolution failed; generated key used"
+                            );
+                        }
+                        resolved
+                    }
+                    None => None,
+                };
+                parsed.database_key =
+                    Some(crate::session_manager::masking::identity::database_key(
+                        cluster_server,
+                        &parsed.infobase_name,
+                        resolved,
+                    ));
+            }
+            //++agent TASK-225
             match state
                 .registry
                 .register_with_generation(parsed, now, Some(Arc::clone(connection)))
@@ -691,6 +727,8 @@ mod tests {
                 resources: None,
                 prompts: None,
                 extras: None,
+                cluster_server: None,
+                database_key: None,
             })
             .unwrap(),
         };

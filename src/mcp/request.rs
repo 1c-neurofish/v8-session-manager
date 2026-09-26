@@ -27,8 +27,8 @@ pub struct McpToolsCacheResetRequest {
 //++agent TASK-225 [26.09.2026]
 /// MCP request for `masking_export_setup` (ОВ-2/Б12).
 ///
-/// `database` — UUID базы в реестре сервиса маскирования. `include_tools=1`
-/// добавляет секцию `tools` в экспорт §1.
+/// База адресуется UUID записи в сервисе маскирования (`database`).
+/// `include_tools=1` добавляет секцию `tools` в экспорт §1.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 #[serde(default, rename_all = "snake_case")]
 pub struct McpMaskingExportSetupRequest {

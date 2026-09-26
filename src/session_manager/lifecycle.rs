@@ -237,6 +237,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         };
         registry
             .register(p, Instant::now(), Some(Arc::clone(&conn)))
@@ -335,6 +337,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         };
         // Регистрируем с last_call_at в прошлом.
         let past = Instant::now() - Duration::from_secs(3600);

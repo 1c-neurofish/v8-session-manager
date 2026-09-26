@@ -276,12 +276,22 @@ Tool `session_list` (единственный встроенный tool мене
 | `masking.broker_public_key_path` | Ed25519 PEM public key trusted broker-а | `/etc/v8-session-manager/broker-ed25519.pub.pem` |
 
 При `masking.enabled: true` manager требует проверенный short-lived JWT/JWS
-диалога, session-name привязку `client_uid → database_id` из конфига
-и успешно завершённые preflight/finalize **для каждого** публичного proxy
-`tools/call` — исключения задаются классификацией инструментов в админке
-сервиса (`managed_tools` в конфиге устарел и игнорируется). Непривязанная
-сессия отклоняется `DATABASE_IDENTITY_UNVERIFIED` до проверки assertion;
-неизвестный сервису инструмент отклоняется до вызова 1С и регистрируется
+диалога и успешно завершённые preflight/finalize **для каждого** публичного
+proxy `tools/call` — исключения задаются классификацией инструментов в админке
+сервиса (`managed_tools` в конфиге устарел и игнорируется). База опознаётся
+автоматически по координатам ИБ из `session.register` (`cluster_server` +
+`infobase_name`); менеджер резолвит их в GUID кластера и GUID ИБ через RAS
+кластера 1С (настройки — env `V8SM_RAC_PATH`, `V8SM_RAS_ADDRESS`,
+`V8SM_RAS_CLUSTER_USER`, `V8SM_RAS_CLUSTER_PASSWORD`, см.
+docs/CONFIGURATION.md; логин/пароль RAS опциональны, по умолчанию `rac` =
+`/opt/1cv8/current/rac`, адрес RAS = `V8SM_RAS_ADDRESS` либо `Srvr` из
+строки соединения как есть — порт rmngr (1541) не порт RAS, поэтому для
+серверных баз `V8SM_RAS_ADDRESS` нужно задать). Без доступного RAS
+регистрация не блокируется: сессия получает ключ `gen:<srvr>/<ref>`,
+под который сервис создаёт отдельную запись (перехода на `ras:`-ключ
+нет — настройки переносятся export/import). Сессия без `cluster_server`+`infobase_name` отклоняется
+`DATABASE_IDENTITY_UNVERIFIED` до проверки assertion; неизвестный сервису
+инструмент отклоняется до вызова 1С и регистрируется
 в очереди классификации. Любая ошибка закрывает вызов до выдачи результата;
 raw fallback отсутствует. Agent-facing параметры маскирования, history IDs
 и controls не добавляются.
@@ -291,8 +301,9 @@ raw fallback отсутствует. Agent-facing параметры маски�
 только peer-у с UID `masking.service_expected_uid`; internal tools
 адаптера не попадают в agent view.
 
-Привязка базы предполагает доверенный VPN/LAN/tunnel между 1С и WS endpoint;
-сам `session.register` отдельной криптографической аутентификации не выполняет.
+Канал регистрации предполагает доверенный VPN/LAN/tunnel между 1С и WS
+endpoint; сам `session.register` отдельной криптографической аутентификации
+не выполняет.
 
 Источник правды: `src/config/model.rs`.
 

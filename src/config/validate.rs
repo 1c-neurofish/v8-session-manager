@@ -43,14 +43,13 @@ pub enum ConfigValidationError {
     #[error("masking.service_expected_uid is required when masking is enabled")]
     MissingServiceExpectedUid,
 
-    #[error("masking.identity_bindings must be non-empty when masking is enabled")]
-    MissingMaskingIdentityBindings,
-
+    //++agent TASK-225 [26.09.2026] N: `identity_bindings` и YAML-настройки
+    // RAS удалены — маршрут по (GUID кластера, GUID ИБ), RAS-резолюция
+    // конфигурируется env (см. masking::ras), пустой/отсутствующий RAS —
+    // штатный режим, не ошибка валидации.
+    //++agent TASK-225
     #[error("masking broker verification settings are invalid")]
     InvalidMaskingBrokerSettings,
-
-    #[error("invalid masking identity binding: {0}")]
-    InvalidMaskingIdentityBinding(String),
 }
 
 pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
@@ -139,9 +138,6 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
         if config.masking.service_expected_uid.is_none() {
             return Err(ConfigValidationError::MissingServiceExpectedUid);
         }
-        if config.masking.identity_bindings.is_empty() {
-            return Err(ConfigValidationError::MissingMaskingIdentityBindings);
-        }
         if !config.masking.broker_public_key_path.is_absolute()
             || config.masking.broker_issuer.is_empty()
             || config.masking.broker_audience != "v8-session-manager"
@@ -155,24 +151,6 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
                 .is_err()
         {
             return Err(ConfigValidationError::InvalidMaskingBrokerSettings);
-        }
-        let mut sessions = std::collections::HashSet::new();
-        let mut databases = std::collections::HashSet::new();
-        for binding in &config.masking.identity_bindings {
-            let database = uuid::Uuid::parse_str(&binding.database_id).map_err(|_| {
-                ConfigValidationError::InvalidMaskingIdentityBinding(
-                    "database_id must be UUID".to_owned(),
-                )
-            })?;
-            if binding.session.is_empty()
-                || !sessions.insert(binding.session.as_str())
-                || !databases.insert(database)
-            {
-                return Err(ConfigValidationError::InvalidMaskingIdentityBinding(
-                    "bindings must have a non-empty session name and unique session/database"
-                        .to_owned(),
-                ));
-            }
         }
     }
 
@@ -230,18 +208,15 @@ mod tests {
     }
 
     #[test]
-    fn masking_enabled_requires_service_uid_and_name_bindings() {
+    fn masking_enabled_requires_service_uid() {
         let mut cfg = base_config();
         cfg.masking.enabled = true;
         cfg.masking.socket_path = PathBuf::from("/run/mask.sock");
         cfg.masking.internal_listen_path = PathBuf::from("/run/mask-manager.sock");
         cfg.masking.broker_public_key_path = PathBuf::from("/etc/manager/broker.pub.pem");
-        cfg.masking.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            session: "server-gbig_pam_ai".to_owned(),
-            database_id: uuid::Uuid::new_v4().to_string(),
-        }];
-
-        // UID сервиса обязателен при enabled: им пользуется internal UDS endpoint.
+        // TASK-225/N: identity_bindings удалены — маршрут по координатам
+        // кластера (cluster_server + RAS-резолвленные GUID-ы), YAML-привязок
+        // и RAS-конфига больше нет: RAS задаётся env и опционален.
         assert!(matches!(
             validate(&cfg),
             Err(ConfigValidationError::MissingServiceExpectedUid)
@@ -249,12 +224,5 @@ mod tests {
 
         cfg.masking.service_expected_uid = Some(994);
         assert!(validate(&cfg).is_ok());
-
-        // Пустое имя сессии и дубли баз отклоняются.
-        cfg.masking.identity_bindings[0].session.clear();
-        assert!(matches!(
-            validate(&cfg),
-            Err(ConfigValidationError::InvalidMaskingIdentityBinding(_))
-        ));
     }
 }

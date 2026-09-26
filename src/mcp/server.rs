@@ -347,8 +347,9 @@ impl McpToolServer {
     /// ОВ-2/Б12: read-only экспорт настройки маскирования (JSON §1 активной
     /// версии). Вызов идёт мимо контура маскирования — ответ содержит только
     /// конфигурацию, без значений словаря, токенов и истории.
+    /// База адресуется UUID записи сервиса (`database`).
     #[tool(
-        description = "Export active masking setup (masking-setup/v1 JSON). Read-only; database = database UUID."
+        description = "Export active masking setup (masking-setup/v1 JSON). Read-only; database = service-side database UUID."
     )]
     async fn masking_export_setup(
         &self,
@@ -794,13 +795,18 @@ fn dispatcher_error_code(error: &DispatcherError) -> &'static str {
 
 fn masking_failure_response(failure: MaskingFailure) -> CallToolResult {
     let mut result = CallToolResult::error(vec![Content::text(failure.message.clone())]);
-    result.structured_content = Some(serde_json::json!({
-        "error": {
-            "code": failure.code,
-            "message": failure.message,
-            "correlation_id": failure.correlation_id
-        }
-    }));
+    //++agent TASK-225 [26.09.2026] фаза-2 C: SERVICE_WARMING_UP —
+    // retry_after_s доступен агенту программно, не только в тексте.
+    let mut error = serde_json::json!({
+        "code": failure.code,
+        "message": failure.message,
+        "correlation_id": failure.correlation_id
+    });
+    if let Some(retry_after_s) = failure.retry_after_s {
+        error["retry_after_s"] = serde_json::json!(retry_after_s);
+    }
+    result.structured_content = Some(serde_json::json!({"error": error}));
+    //++agent TASK-225
     result
 }
 
@@ -914,7 +920,7 @@ fn proxy_call_deadline(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{MaskingIdentityBinding, McpConfig, ToolsCacheConfig};
+    use crate::config::model::{McpConfig, ToolsCacheConfig};
     use crate::session_manager::protocol::{SessionRegisterParams, ToolDescriptor};
     use serde_json::json;
     use std::path::PathBuf;
@@ -949,6 +955,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                     resources: None,
                     prompts: None,
                     extras: None,
+                    cluster_server: None,
+                    database_key: None,
                 },
                 Instant::now(),
                 None,
@@ -1171,22 +1179,39 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         );
     }
 
+    //++agent TASK-225 [26.09.2026] фаза-2 Q: retry_after_s доступен
+    // агенту программно — в structured_content.error, не только в тексте.
+    #[test]
+    fn masking_failure_retry_after_s_reaches_structured_content() {
+        let mut failure = MaskingFailure::with_correlation(
+            "SERVICE_WARMING_UP",
+            "Сервис маскирования прогревает словарь, повторите через 5 с",
+            "corr-1".to_owned(),
+        );
+        failure.retry_after_s = Some(5);
+        let result = masking_failure_response(failure);
+        let error = &result.structured_content.unwrap()["error"];
+        assert_eq!(error["code"], "SERVICE_WARMING_UP");
+        assert_eq!(error["retry_after_s"], 5);
+        assert_eq!(result.is_error, Some(true));
+    }
+    //++agent TASK-225
+
     #[tokio::test]
     async fn configured_route_fails_closed_without_conversation_or_service() {
         let temp = tempfile::tempdir().unwrap();
         let public_key_path = temp.path().join("broker.pub.pem");
         std::fs::write(&public_key_path, TEST_BROKER_PUBLIC_KEY).unwrap();
-        let database_id = uuid::Uuid::new_v4();
+        // O2: identity сессии = ключ `ras:<c>:<i>`, вычисленный менеджером
+        // при регистрации (здесь фикстура сразу несёт ключ).
+        let cluster_guid = uuid::Uuid::new_v4();
+        let infobase_guid = uuid::Uuid::new_v4();
         let masking = crate::config::model::MaskingConfig {
             enabled: true,
             socket_path: temp.path().join("service-not-running.sock"),
             internal_listen_path: temp.path().join("manager.sock"),
             service_expected_uid: Some(994),
             broker_public_key_path: public_key_path,
-            identity_bindings: vec![MaskingIdentityBinding {
-                session: "dev-trusted".to_owned(),
-                database_id: database_id.to_string(),
-            }],
             ..Default::default()
         };
         let config = Arc::new(AppConfig {
@@ -1217,6 +1242,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: Some("onec-infra".to_owned()),
+            database_key: Some(format!("ras:{cluster_guid}:{infobase_guid}")),
         };
         registry
             .register(registration, Instant::now(), None)
@@ -1273,8 +1300,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         assert_eq!(outbox["events"].as_array().unwrap().len(), 2);
         assert_eq!(outbox["events"][1]["scope"]["kind"], "verified");
         assert_eq!(
-            outbox["events"][1]["scope"]["database_id"],
-            database_id.to_string()
+            outbox["events"][1]["scope"]["instance_id"],
+            format!("ras:{cluster_guid}:{infobase_guid}")
         );
         assert_eq!(
             outbox["events"][1]["scope"]["chat_id"],
@@ -1300,17 +1327,16 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         let temp = tempfile::tempdir().unwrap();
         let public_key_path = temp.path().join("broker.pub.pem");
         std::fs::write(&public_key_path, TEST_BROKER_PUBLIC_KEY).unwrap();
-        let database_id = uuid::Uuid::new_v4();
+        // O2: identity сессии = ключ `ras:<c>:<i>`, вычисленный менеджером
+        // при регистрации (здесь фикстура сразу несёт ключ).
+        let cluster_guid = uuid::Uuid::new_v4();
+        let infobase_guid = uuid::Uuid::new_v4();
         let masking = crate::config::model::MaskingConfig {
             enabled: true,
             socket_path: temp.path().join("service-not-running.sock"),
             internal_listen_path: temp.path().join("manager.sock"),
             service_expected_uid: Some(994),
             broker_public_key_path: public_key_path,
-            identity_bindings: vec![MaskingIdentityBinding {
-                session: "dev-trusted".to_owned(),
-                database_id: database_id.to_string(),
-            }],
             ..Default::default()
         };
         let config = Arc::new(AppConfig {
@@ -1353,12 +1379,15 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                     resources: None,
                     prompts: None,
                     extras: None,
+                    cluster_server: Some("onec-infra".to_owned()),
+                    database_key: Some(format!("ras:{cluster_guid}:{infobase_guid}")),
                 },
                 Instant::now(),
                 None,
             )
             .unwrap();
-        // Непривязанная сессия (identity_bindings её не знает).
+        // Сессия без ключа базы (RAS не резолвил / файл-база) —
+        // в старой модели это был «unbound» по identity_bindings.
         register_fake_session(&registry, "unbound-session", &["any_tool"]);
 
         // Инструмент вне бывшего managed_tools — доходит до gate:

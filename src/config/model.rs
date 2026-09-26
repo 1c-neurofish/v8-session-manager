@@ -71,7 +71,14 @@ pub struct MaskingConfig {
     /// Ожидаемый UID сервиса маскирования на `internal_listen_path`;
     /// обязателен при `enabled=true`.
     pub service_expected_uid: Option<u32>,
-    pub identity_bindings: Vec<MaskingIdentityBinding>,
+    //++agent TASK-225 [26.09.2026] N: `identity_bindings` (имя сессии →
+    // database_id сервиса) удалено из модели — идентичность базы
+    // детерминированно определяется парой (GUID кластера, GUID ИБ),
+    // которую менеджер резолвит через RAS по `cluster_server`+
+    // `infobase_name` из `session.register`. Настройки RAS — только в env
+    // (`V8SM_RAC_PATH`/`V8SM_RAS_ADDRESS`/`V8SM_RAS_CLUSTER_USER`/
+    // `V8SM_RAS_CLUSTER_PASSWORD`), см. masking::ras.
+    //++agent TASK-225
 }
 
 impl Default for MaskingConfig {
@@ -98,21 +105,8 @@ impl Default for MaskingConfig {
                 "mcp_internal_masking_dictionary_feed".to_owned(),
             ],
             service_expected_uid: None,
-            identity_bindings: Vec::new(),
         }
     }
-}
-
-/// Deployment-owned сопоставление имени сессии с базой сервиса маскирования.
-/// База = сервер+имя: session `"server-gbig_pam_ai"` (client_uid при
-/// регистрации) ↔ `database_id` в сервисе маскирования.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub struct MaskingIdentityBinding {
-    /// `client_uid` сессии из `session.register` (например `server-gbig_pam_ai`).
-    pub session: String,
-    /// UUID базы в сервисе маскирования.
-    pub database_id: String,
 }
 
 /// MCP runtime configuration.

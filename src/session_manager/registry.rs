@@ -60,6 +60,17 @@ pub struct SessionRecord {
     /// Обновляется при soft reconnect — фактический номер в новом сеансе
     /// 1С может отличаться от номера предыдущего сеанса.
     pub ib_session_number: u32,
+    //++agent TASK-225 [26.09.2026] O2: идентичность базы — точный ключ.
+    /// `database_key` = `ras:<cluster_guid>:<infobase_guid>` либо
+    /// `gen:<srvr>/<ref>` verbatim — вычисляется менеджером при
+    /// регистрации через RAS (см. `masking::ras`); `cluster_server` —
+    /// исходный `Srvr` для отображения. `None` для файловых баз:
+    /// сессия без `cluster_server` не проходит masking-gate
+    /// (DATABASE_IDENTITY_UNVERIFIED). Поля обновляются при soft
+    /// reconnect (переезды ИБ не ломают маршрут).
+    pub cluster_server: Option<String>,
+    pub database_key: Option<String>,
+    //++agent TASK-225
     pub tools: Vec<ToolDescriptor>,
     pub state: SessionState,
     /// Идентификатор хоста, на котором работает процесс. Берётся из поля
@@ -230,6 +241,12 @@ impl SessionRegistry {
                     existing.config_id = resolved_config_id.clone();
                     existing.infobase_name = params.infobase_name;
                     existing.ib_session_number = params.ib_session_number;
+                    //++agent TASK-225 [26.09.2026] O2: identity
+                    // перепривязывается при каждом reconnect — ИБ могла
+                    // переехать в другой кластер, старый ключ невалиден.
+                    existing.cluster_server = params.cluster_server;
+                    existing.database_key = params.database_key;
+                    //++agent TASK-225
                     existing.connection = connection;
                     existing.connection_generation = new_gen;
                     if let Some(hid) = params.host_id {
@@ -258,6 +275,8 @@ impl SessionRegistry {
             version: params.version,
             infobase_name: params.infobase_name,
             ib_session_number: params.ib_session_number,
+            cluster_server: params.cluster_server,
+            database_key: params.database_key,
             tools: params.tools,
             state: SessionState::Active,
             host_id: params.host_id.unwrap_or_else(|| "unknown".to_owned()),
@@ -515,6 +534,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         }
     }
 

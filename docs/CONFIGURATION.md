@@ -63,9 +63,6 @@ masking:
   internal_tools:
     - mcp_internal_masking_metadata_feed
     - mcp_internal_masking_dictionary_feed
-  identity_bindings:
-    - session: server-gbig_pam_ai
-      database_id: 22222222-2222-4222-8222-222222222222
 ```
 
 ## Корневые ключи
@@ -123,19 +120,21 @@ Prometheus exporter.
 ## Секция `masking`
 
 По умолчанию интеграция выключена. При `enabled: true` обязательны UDS сервиса,
-UDS internal endpoint менеджера, UID peer-а сервиса, Ed25519 public key trusted
-broker-а и хотя бы одна session-name identity binding. Manager принимает
+UDS internal endpoint менеджера, UID peer-а сервиса и Ed25519 public key
+trusted broker-а. Manager принимает
 `conversation_id` только из JWT/JWS header, проверяя `iss`,
 `aud=v8-session-manager`, `iat`, `exp` и максимальный TTL. Tool arguments
 и MCP `_meta` источниками chat identity не являются.
 
 При `enabled: true` **каждый** публичный proxy `tools/call` проходит через
 сервис маскирования (preflight + finalize) — единая точка контроля.
-Классификация инструментов (`data-mask`, `metadata-bypass`,
+Классификация инструментов (`data-mask`, `no-mask`,
 `deny-pending-review`) настраивается в административном API сервиса, а не
 конфигом менеджера: неизвестный сервису инструмент отклоняется до вызова 1С
 как `deny-pending-review` и автоматически попадает в очередь классификации.
-Сессия без привязки к `database_id` отклоняется
+Сессия идентифицируется координатами ИБ из `session.register`
+(`cluster_server`/`infobase_name`); при RAS-резолюции — парой GUID-ов
+кластера и ИБ. Сессия без `cluster_server`+`infobase_name` отклоняется
 `DATABASE_IDENTITY_UNVERIFIED` до проверки conversation assertion.
 
 `managed_tools` — **устаревшее** поле: оставлено для совместимости со
@@ -154,19 +153,49 @@ broker-а и хотя бы одна session-name identity binding. Manager пр�
 
 `internal_listen_path` — UDS в том же shared volume, что и socket сервиса.
 На нём менеджер принимает `POST /internal/v1/tools/call`
-(`{database_id, name, arguments}`) только от peer-а с UID
-`service_expected_uid`; unknown tool, чужой UID и неоднозначный target
-отклоняются фиксированными error-кодами. `internal_call_timeout_ms` —
-таймаут dispatch в сессию 1С.
+(`{cluster_server, infobase_name, [cluster_guid, infobase_guid], name,
+arguments}`) только от peer-а с UID `service_expected_uid`; unknown tool,
+чужой UID и неоднозначный target отклоняются фиксированными error-кодами.
+`internal_call_timeout_ms` — таймаут dispatch в сессию 1С.
 
-Каждая `identity_bindings` запись содержит `session` (registered
-`client_uid` адаптера) и `database_id` (непрозрачный UUID базы в сервисе
-маскирования). Имена сессий и UUID должны быть непустыми и уникальными;
-сессия вне списка не получает database identity и managed route.
-Эта привязка является operational mapping внутри принятой доверенной сетевой
-границы (VPN/LAN/tunnel): manager не выполняет отдельную криптографическую
-аутентификацию WS registration. Поэтому WS endpoint нельзя публиковать за
-пределами этой границы без отдельного transport-auth слоя.
+WS registration не аутентифицируется отдельным криптографическим слоем —
+это operational channel внутри принятой доверенной сетевой границы
+(VPN/LAN/tunnel). Поэтому WS endpoint нельзя публиковать за пределами
+этой границы без отдельного transport-auth слоя.
+
+### Опознание баз через RAS (env)
+
+При `masking.enabled: true` менеджер при `session.register` резолвит
+координаты ИБ (`cluster_server`/`infobase_name`) в GUID кластера и GUID
+инфобазы через RAS-агент кластера 1С (`rac`). Настройки — только в env
+процесса менеджера (в YAML не выносятся, т.к. содержат креды):
+
+| Env | По умолчанию | Назначение |
+|-----|--------------|------------|
+| `V8SM_RAC_PATH` | `/opt/1cv8/current/rac` | Путь к исполняемому `rac` платформы 1С. |
+| `V8SM_RAS_ADDRESS` | — | Фиксированный адрес RAS (`host:port`); без него `rac` вызывается по `cluster_server` (Srvr строки соединения) как есть — порт rmngr ≠ порт RAS, поэтому для серверных баз переменную нужно задать. |
+| `V8SM_RAS_CLUSTER_USER` | — | Пользователь кластера 1С (опционально). |
+| `V8SM_RAS_CLUSTER_PASSWORD` | — | Пароль кластера 1С (опционально; не логируется). |
+
+Пустые/отсутствующие `V8SM_RAS_CLUSTER_USER`/`V8SM_RAS_CLUSTER_PASSWORD` —
+не ошибка: RAS без пароля — штатная схема, флаги `--cluster-user`/
+`--cluster-pwd` в этом случае в `rac` не передаются.
+
+`V8SM_RAS_CLUSTER_PASSWORD` передаётся `rac` аргументом командной строки
+(`--cluster-pwd`), поэтому на время вызова виден в argv процесса `rac`
+(`ps`, `/proc/<pid>/cmdline`). Если это неприемлемо — используйте RAS
+без пароля или изолируйте хост менеджера.
+
+Ключ идентичности базы — непрозрачная строка `instance_id`
+(`ras:<cluster_guid>:<infobase_guid>` при успешной RAS-резолюции,
+`gen:<srvr>/<ref>` verbatim при недоступном RAS): совпадение только
+точное, нормализации и координатных фолбэков нет — склейка баз
+невозможна по построению. Если `rac` отсутствует, RAS недоступен по
+сети или отказал — регистрация не блокируется: сессия получает
+`gen:`-ключ, а сервис маскирования при первом обращении создаёт под него
+ненастроенную запись. Автоматического перехода `gen:` → `ras:` нет:
+настройки переносятся между записями экспортом/импортом; переименование
+или перенос базы при `gen:`-ключе даёт новый ключ и новую запись.
 
 Timeout defaults: `preflight_timeout_ms=3000`, `finalize_timeout_ms=15000`,
 `internal_call_timeout_ms=10000`.

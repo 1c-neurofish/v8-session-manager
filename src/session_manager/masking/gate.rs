@@ -15,7 +15,8 @@ use crate::session_manager::masking::client::{
     ClientError, FinalizeOutcome, FinalizeRequest, MaskingServiceClient, PreflightRequest,
     TerminalRequest, TerminalScope,
 };
-use crate::session_manager::masking::identity::{IdentityResolver, VerifiedDatabaseIdentity};
+use crate::session_manager::masking::identity::SessionDatabaseIdentity;
+use crate::session_manager::masking::ras::RasResolver;
 use crate::session_manager::protocol::ToolCallResult;
 use crate::session_manager::protocol::{ToolDescriptor, ToolVisibility};
 use crate::session_manager::registry::SessionRecord;
@@ -54,7 +55,10 @@ const MAX_ASSERTION_REPLAY_ENTRIES: usize = 10_000;
 pub struct MaskingCallContext {
     pub call_id: String,
     pub correlation_id: String,
-    pub database_id: String,
+    //++agent TASK-225 [26.09.2026] N: идентичность — пара GUID-ов,
+    // RAS-резолвленная менеджером при session.register.
+    pub database: SessionDatabaseIdentity,
+    //++agent TASK-225
     pub chat_id: String,
     pub tool_name: String,
 }
@@ -65,6 +69,10 @@ pub struct MaskingFailure {
     pub code: String,
     pub message: String,
     pub correlation_id: String,
+    //++agent TASK-225 [26.09.2026] фаза-2 C: SERVICE_WARMING_UP несёт
+    // оценку повтора — уходит в structured_content MCP-ответа.
+    pub retry_after_s: Option<u64>,
+    //++agent TASK-225
 }
 
 impl MaskingFailure {
@@ -77,6 +85,7 @@ impl MaskingFailure {
             code: code.to_owned(),
             message: message.to_owned(),
             correlation_id,
+            retry_after_s: None,
         }
     }
 }
@@ -180,11 +189,18 @@ fn valid_terminal(event: &TerminalRequest) -> bool {
         return false;
     }
     let allowed = match &event.scope {
+        //++agent TASK-225 [26.09.2026] N: verified scope — координаты
+        // базы (Srvr/Ref обязательны, GUID-ы опциональны и типизированы).
         TerminalScope::Verified {
-            database_id,
+            cluster_server,
+            infobase_name,
             chat_id,
+            ..
         } => {
-            Uuid::parse_str(database_id).is_ok()
+            !cluster_server.is_empty()
+                && cluster_server.len() <= 512
+                && !infobase_name.is_empty()
+                && infobase_name.len() <= 512
                 && !chat_id.is_empty()
                 && chat_id.len() <= 512
                 && matches!(
@@ -193,6 +209,9 @@ fn valid_terminal(event: &TerminalRequest) -> bool {
                         | "TOOL_PENDING_REVIEW"
                         | "MASK_TOKEN_INVALID"
                         | "SERVICE_NOT_READY"
+                        //++agent TASK-225 [26.09.2026] фаза-2 C
+                        | "SERVICE_WARMING_UP"
+                        //++agent TASK-225
                         | "POLICY_INVALID"
                         | "RESULT_LIMIT_EXCEEDED"
                         | "MASKING_TIMEOUT"
@@ -215,7 +234,10 @@ pub struct MaskingGate {
     /// Имена internal tools (`masking.internal_tools`): не публикуются
     /// агенту и вызываются только через internal UDS endpoint.
     internal_tools: Arc<HashSet<String>>,
-    identity: Arc<IdentityResolver>,
+    //++agent TASK-225 [26.09.2026] N: identity_bindings упразднены; вместо
+    // deployment-резолвера — RAS-резолвер (srvr, ref) → GUID-ы кластера.
+    ras: Option<Arc<RasResolver>>,
+    //++agent TASK-225
     client: Option<MaskingServiceClient>,
     verifier: Option<Arc<ConversationVerifier>>,
     assertion_header: String,
@@ -235,7 +257,7 @@ impl MaskingGate {
             return Ok(Self {
                 enabled: false,
                 internal_tools: Arc::new(config.internal_tools.iter().cloned().collect()),
-                identity: Arc::new(IdentityResolver::new(&[])),
+                ras: None,
                 client: None,
                 verifier: None,
                 assertion_header: config.conversation_assertion_header.clone(),
@@ -268,7 +290,7 @@ impl MaskingGate {
         Ok(Self {
             enabled: true,
             internal_tools: Arc::new(config.internal_tools.iter().cloned().collect()),
-            identity: Arc::new(IdentityResolver::new(&config.identity_bindings)),
+            ras: Some(Arc::new(RasResolver::from_env())),
             client: Some(MaskingServiceClient::new(
                 config.socket_path.clone(),
                 Duration::from_millis(config.preflight_timeout_ms),
@@ -326,9 +348,9 @@ impl MaskingGate {
     //++agent TASK-225 [25.09.2026]
     /// При `masking.enabled=true` КАЖДЫЙ публичный proxy `tools/call` идёт
     /// через gate (единая точка контроля; исключения — классификацией в
-    /// сервисе). Привязка сессии к `database_id` проверяется внутри ветки
-    /// вызова: непривязанная сессия получает DATABASE_IDENTITY_UNVERIFIED,
-    /// а не raw-bypass вокруг маскировщика.
+    /// сервисе). Идентичность базы сессии (координаты ИБ + RAS GUID-ы)
+    /// проверяется внутри ветки вызова: сессия без координат получает
+    /// DATABASE_IDENTITY_UNVERIFIED, а не raw-bypass вокруг маскировщика.
     //++agent TASK-225
     pub fn is_enabled(&self) -> bool {
         self.enabled
@@ -383,17 +405,25 @@ impl MaskingGate {
     }
     //--agent TASK-225
 
-    pub fn verify_database(&self, record: &SessionRecord) -> Option<VerifiedDatabaseIdentity> {
-        self.identity.verify(record)
+    /// Identity сессии — из `SessionRecord` (присланный `cluster_server`
+    /// и GUID-ы RAS-резолюции). `None` только для сессий без
+    /// `cluster_server` (файловая база) — вызов получает
+    /// DATABASE_IDENTITY_UNVERIFIED; неудачная RAS-резолюция identity не
+    /// снимает — сервис тогда работает со сгенерированной парой GUID-ов.
+    pub fn verify_database(&self, record: &SessionRecord) -> Option<SessionDatabaseIdentity> {
+        SessionDatabaseIdentity::from_record(record)
     }
 
-    pub(crate) fn identity_resolver(&self) -> &IdentityResolver {
-        &self.identity
+    //++agent TASK-225 [26.09.2026] N: доступ к RAS-резолверу из transport
+    /// при регистрации сессии.
+    pub(crate) fn ras_resolver(&self) -> Option<&Arc<RasResolver>> {
+        self.ras.as_ref()
     }
+    //++agent TASK-225
 
     pub fn call_context(
         &self,
-        identity: VerifiedDatabaseIdentity,
+        identity: SessionDatabaseIdentity,
         conversation: &TrustedConversationContext,
         tool_name: &str,
         call_id: String,
@@ -402,7 +432,7 @@ impl MaskingGate {
         MaskingCallContext {
             call_id,
             correlation_id,
-            database_id: identity.database_id.to_string(),
+            database: identity,
             chat_id: conversation.conversation_id.clone(),
             tool_name: tool_name.to_owned(),
         }
@@ -433,7 +463,9 @@ impl MaskingGate {
             tool_name: context.tool_name.clone(),
             error_code: error_code.to_owned(),
             scope: TerminalScope::Verified {
-                database_id: context.database_id.clone(),
+                instance_id: context.database.instance_id.clone(),
+                cluster_server: context.database.cluster_server.clone(),
+                infobase_name: context.database.infobase_name.clone(),
                 chat_id: context.chat_id.clone(),
             },
         }
@@ -491,7 +523,9 @@ impl MaskingGate {
             schema_version: 1,
             call_id: context.call_id.clone(),
             correlation_id: context.correlation_id.clone(),
-            database_id: context.database_id.clone(),
+            instance_id: context.database.instance_id.clone(),
+            cluster_server: context.database.cluster_server.clone(),
+            infobase_name: context.database.infobase_name.clone(),
             chat_id: context.chat_id.clone(),
             tool_name: context.tool_name.clone(),
             arguments,
@@ -555,7 +589,9 @@ impl MaskingGate {
             schema_version: 1,
             call_id: context.call_id.clone(),
             correlation_id: context.correlation_id.clone(),
-            database_id: context.database_id.clone(),
+            instance_id: context.database.instance_id.clone(),
+            cluster_server: context.database.cluster_server.clone(),
+            infobase_name: context.database.infobase_name.clone(),
             chat_id: context.chat_id.clone(),
             tool_name: context.tool_name.clone(),
             outcome,
@@ -629,6 +665,10 @@ fn terminal_fallback_code(code: &str) -> &str {
         | "TOOL_PENDING_REVIEW"
         | "MASK_TOKEN_INVALID"
         | "SERVICE_NOT_READY"
+        //++agent TASK-225 [26.09.2026] фаза-2 C: прогрев словаря —
+        // честный код в терминальной записи, а не MASKING_FAILED.
+        | "SERVICE_WARMING_UP"
+        //++agent TASK-225
         | "POLICY_INVALID"
         | "RESULT_LIMIT_EXCEEDED"
         | "MASKING_TIMEOUT"
@@ -644,6 +684,9 @@ fn map_client_error(error: ClientError, correlation_id: &str) -> MaskingFailure 
             code: error.code,
             message: error.message,
             correlation_id: error.correlation_id,
+            //++agent TASK-225 [26.09.2026] фаза-2 C
+            retry_after_s: error.retry_after_s,
+            //++agent TASK-225
         },
         ClientError::Timeout => MaskingFailure::with_correlation(
             "MASKING_TIMEOUT",
@@ -697,25 +740,44 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
 -----END PUBLIC KEY-----
 "#;
 
-    fn gate_for(session: &str, database_id: Uuid) -> MaskingGate {
-        let dir = tempfile::tempdir().unwrap();
-        let public_key_path = dir.path().join("broker.pub.pem");
-        std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
-        let mut config = MaskingConfig::default();
-        config.enabled = true;
-        config.broker_public_key_path = public_key_path;
-        config.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            session: session.to_owned(),
-            database_id: database_id.to_string(),
-        }];
-        MaskingGate::from_config(&config, dir.path()).unwrap()
+    const TEST_CLUSTER: &str = "0de031da-e8d9-43de-bb39-7c8bd4d9855c";
+    const TEST_INFOBASE: &str = "320f6387-89b5-43fc-b344-67b11f957472";
+
+    /// Identity, которую в бою даёт регистрация с `cluster_server` +
+    /// RAS-резолвленным ключом `ras:<cluster>:<infobase>`.
+    fn test_identity(infobase_name: &str) -> SessionDatabaseIdentity {
+        SessionDatabaseIdentity {
+            instance_id: format!("ras:{TEST_CLUSTER}:{TEST_INFOBASE}"),
+            cluster_server: "onec-infra".to_owned(),
+            infobase_name: infobase_name.to_owned(),
+        }
     }
 
     fn gate() -> MaskingGate {
-        gate_for("server-gbig_pam_ai", Uuid::new_v4())
+        let dir = tempfile::tempdir().unwrap();
+        let public_key_path = dir.path().join("broker.pub.pem");
+        std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
+        let config = MaskingConfig {
+            enabled: true,
+            broker_public_key_path: public_key_path,
+            ..MaskingConfig::default()
+        };
+        MaskingGate::from_config(&config, dir.path()).unwrap()
     }
 
     fn registration(client_uid: &str, tools: Vec<ToolDescriptor>) -> SessionRegisterParams {
+        registration_with_identity(client_uid, tools, None, None)
+    }
+
+    /// `cluster_server`/`database_key` моделируют состояние после
+    /// регистрации: `cluster_server` = присланный адаптером `Srvr`,
+    /// `database_key` — вычисленный менеджером ключ (`ras:`/`gen:`).
+    fn registration_with_identity(
+        client_uid: &str,
+        tools: Vec<ToolDescriptor>,
+        cluster_server: Option<&str>,
+        database_key: Option<String>,
+    ) -> SessionRegisterParams {
         SessionRegisterParams {
             client_uid: client_uid.to_owned(),
             kind: "server".to_owned(),
@@ -729,6 +791,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: cluster_server.map(str::to_owned),
+            database_key,
         }
     }
 
@@ -776,15 +840,14 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
 
     #[test]
     fn masking_scope_covers_all_tools_and_visibility_is_normalized_by_config() {
-        let database = Uuid::new_v4();
-        let gate = gate_for("dev-trusted", database);
+        let gate = gate();
         let registry = SessionRegistry::new();
 
         //++agent TASK-225 [25.09.2026]
         // Все публичные proxy-вызовы идут через gate при enabled — имя
         // инструмента и наличие в бывшем managed_tools роли не играют.
-        // Привязка сессии к database_id отдельна: verify_database для
-        // непривязанной сессии → None → DATABASE_IDENTITY_UNVERIFIED.
+        // Идентичность базы проверяется отдельно: verify_database для
+        // сессии без координат → None → DATABASE_IDENTITY_UNVERIFIED.
         //++agent TASK-225
         assert!(gate.is_enabled());
         let legacy = registration(
@@ -798,21 +861,22 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         // adapter-provided `Public` не доверен для имён из конфига;
         // adapter-declared `Internal` сохраняется как fail-safe
         // (ограничение видимости никогда не расширяется).
-        let mut dev = registration(
+        let dev_identity = test_identity("dev-trusted");
+        let mut dev = registration_with_identity(
             "dev-trusted",
             vec![
                 tool("execute_query", ToolVisibility::Internal),
                 tool("mcp_internal_masking_metadata_feed", ToolVisibility::Public),
             ],
+            Some("onec-infra"),
+            Some(dev_identity.instance_id.clone()),
         );
         gate.normalize_tools(&mut dev.tools);
         registry.register(dev, Instant::now(), None).unwrap();
         let dev = registry.get("dev-trusted").unwrap();
         assert_eq!(
             gate.verify_database(&dev),
-            Some(VerifiedDatabaseIdentity {
-                database_id: database
-            })
+            Some(test_identity("dev-trusted"))
         );
         assert_eq!(dev.tools[0].visibility, ToolVisibility::Internal);
         assert_eq!(dev.tools[1].visibility, ToolVisibility::Internal);
@@ -891,6 +955,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                 message: "terminal event already exists".to_owned(),
                 correlation_id: Uuid::new_v4().to_string(),
                 retryable: false,
+                retry_after_s: None,
             },
         })));
         assert!(!terminal_delivery_ack(Err(ClientError::Service {
@@ -900,6 +965,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                 message: "wrong status".to_owned(),
                 correlation_id: Uuid::new_v4().to_string(),
                 retryable: false,
+                retry_after_s: None,
             },
         })));
         assert!(!terminal_delivery_ack(Ok(TerminalResponse {
@@ -913,6 +979,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                 message: "invalid".to_owned(),
                 correlation_id: Uuid::new_v4().to_string(),
                 retryable: false,
+                retry_after_s: None,
             },
         })));
         assert_eq!(
@@ -931,15 +998,13 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         let public_key_path = dir.path().join("broker.pub.pem");
         let socket_path = dir.path().join("masking.sock");
         std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
-        let mut config = MaskingConfig::default();
-        config.enabled = true;
-        config.socket_path = socket_path.clone();
-        config.preflight_timeout_ms = 100;
-        config.broker_public_key_path = public_key_path;
-        config.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            session: "server-gbig_pam_ai".to_owned(),
-            database_id: Uuid::new_v4().to_string(),
-        }];
+        let config = MaskingConfig {
+            enabled: true,
+            socket_path: socket_path.clone(),
+            preflight_timeout_ms: 100,
+            broker_public_key_path: public_key_path,
+            ..MaskingConfig::default()
+        };
         let event = TerminalRequest {
             schema_version: 1,
             call_id: Uuid::new_v4().to_string(),
@@ -1009,21 +1074,19 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         let dir = tempfile::tempdir().unwrap();
         let public_key_path = dir.path().join("broker.pub.pem");
         std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
-        let mut config = MaskingConfig::default();
-        config.enabled = true;
-        config.socket_path = dir.path().join("service-not-running.sock");
-        config.preflight_timeout_ms = 100;
-        config.finalize_timeout_ms = 100;
-        config.broker_public_key_path = public_key_path;
-        config.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            session: "server-gbig_pam_ai".to_owned(),
-            database_id: Uuid::new_v4().to_string(),
-        }];
+        let config = MaskingConfig {
+            enabled: true,
+            socket_path: dir.path().join("service-not-running.sock"),
+            preflight_timeout_ms: 100,
+            finalize_timeout_ms: 100,
+            broker_public_key_path: public_key_path,
+            ..MaskingConfig::default()
+        };
         let gate = MaskingGate::from_config(&config, dir.path()).unwrap();
         let context = MaskingCallContext {
             call_id: Uuid::new_v4().to_string(),
             correlation_id: Uuid::new_v4().to_string(),
-            database_id: Uuid::new_v4().to_string(),
+            database: test_identity("test-ib"),
             chat_id: "opaque-chat".to_owned(),
             tool_name: "execute_query".to_owned(),
         };
@@ -1052,8 +1115,10 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         assert_eq!(
             outbox.events[0].scope,
             TerminalScope::Verified {
-                database_id: context.database_id,
-                chat_id: context.chat_id,
+                instance_id: context.database.instance_id.clone(),
+                cluster_server: context.database.cluster_server.clone(),
+                infobase_name: context.database.infobase_name.clone(),
+                chat_id: context.chat_id.clone(),
             }
         );
     }
@@ -1064,19 +1129,17 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         let public_key_path = dir.path().join("broker.pub.pem");
         let socket_path = dir.path().join("masking.sock");
         std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
-        let mut config = MaskingConfig::default();
-        config.enabled = true;
-        config.socket_path = socket_path.clone();
-        config.preflight_timeout_ms = 500;
-        config.broker_public_key_path = public_key_path;
-        config.identity_bindings = vec![crate::config::model::MaskingIdentityBinding {
-            session: "server-gbig_pam_ai".to_owned(),
-            database_id: Uuid::new_v4().to_string(),
-        }];
+        let config = MaskingConfig {
+            enabled: true,
+            socket_path: socket_path.clone(),
+            preflight_timeout_ms: 500,
+            broker_public_key_path: public_key_path,
+            ..MaskingConfig::default()
+        };
         let context = MaskingCallContext {
             call_id: Uuid::new_v4().to_string(),
             correlation_id: Uuid::new_v4().to_string(),
-            database_id: Uuid::new_v4().to_string(),
+            database: test_identity("test-ib"),
             chat_id: "opaque-chat".to_owned(),
             tool_name: "execute_query".to_owned(),
         };
@@ -1156,4 +1219,44 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             .contains("private"));
         server.await.unwrap();
     }
+
+    //++agent TASK-225 [26.09.2026] фаза-2 L R4-1: SERVICE_WARMING_UP —
+    // честный код терминала (whitelist valid_terminal + fallback), а не
+    // MASKING_FAILED; retry_after_s живёт в MaskingFailure. Сквозная
+    // доставка терминала и дренаж outbox покрыты
+    // `preflight_service_not_ready_is_recorded_through_terminal_route` и
+    // replay-тестом выше — механика для этого кода та же; живой прогон
+    // менеджер→сервис сделан на DEV (impl-t227.md, раздел L).
+    #[test]
+    fn warming_up_code_passes_terminal_whitelist_and_keeps_retry_after() {
+        let context = MaskingCallContext {
+            call_id: Uuid::new_v4().to_string(),
+            correlation_id: Uuid::new_v4().to_string(),
+            database: test_identity("test-ib"),
+            chat_id: "opaque-chat".to_owned(),
+            tool_name: "execute_query".to_owned(),
+        };
+        let event = MaskingGate::verified_terminal(&context, "SERVICE_WARMING_UP");
+        assert!(valid_terminal(&event));
+        assert_eq!(
+            terminal_fallback_code("SERVICE_WARMING_UP"),
+            "SERVICE_WARMING_UP"
+        );
+        let failure = map_client_error(
+            ClientError::Service {
+                status: hyper::StatusCode::SERVICE_UNAVAILABLE,
+                error: crate::session_manager::masking::client::ServiceError {
+                    code: "SERVICE_WARMING_UP".to_owned(),
+                    message: "прогрев".to_owned(),
+                    correlation_id: context.correlation_id.clone(),
+                    retryable: true,
+                    retry_after_s: Some(5),
+                },
+            },
+            &context.correlation_id,
+        );
+        assert_eq!(failure.code, "SERVICE_WARMING_UP");
+        assert_eq!(failure.retry_after_s, Some(5));
+    }
+    //++agent TASK-225
 }

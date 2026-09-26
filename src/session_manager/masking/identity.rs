@@ -1,111 +1,60 @@
-//! Deployment-owned резолюция identity: WS‑сессия ↔ база сервиса маскирования.
+//! Идентичность базы сессии для masking-контура (раздел O2).
 //!
-//! Сопоставление задаётся конфигом по имени: `masking.identity_bindings[]`
-//! привязывает `client_uid` сессии (например `server-gbig_pam_ai`) к
-//! `database_id` в сервисе маскирования. Менеджер не доверяет identity,
-//! присланной адаптером: регистрация не несёт ни UUID установки, ни
-//! маршрутной привязки — источник истины только конфиг.
+//! База идентифицируется непрозрачным ключом, который менеджер вычисляет
+//! один раз при `session.register`:
+//! - `ras:<cluster_guid>:<infobase_guid>` — после успешной RAS-резолюции
+//!   (см. `ras.rs`);
+//! - `gen:<srvr>/<ref>` — строки `Srvr`/`Ref` как есть, когда RAS
+//!   недоступен.
+//!
+//! Сопоставление везде — только точное равенство ключа: никакой
+//! нормализации координат, перебора хостов и фолбэков. RAS- и
+//! generated-ключи одних и тех же координат — разные записи сервиса;
+//! перехода generated→ras нет (настройки переносятся export/import).
+//!
+//! Менеджер не доверяет идентификаторам с провода: поле `database_key`
+//! в `SessionRegisterParams` помечено `serde(skip)` и заполняется только
+//! результатом вычисления менеджера.
 
-use std::collections::HashMap;
-
-use uuid::Uuid;
-
-use crate::config::model::MaskingIdentityBinding;
+use crate::session_manager::masking::ras::ResolvedDatabaseIdentity;
 use crate::session_manager::registry::SessionRecord;
 
-/// Проверенный routing identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VerifiedDatabaseIdentity {
-    /// UUID базы в сервисе маскирования.
-    pub database_id: Uuid,
+/// Идентичность базы сессии: готовый ключ `instance_id` плюс
+/// отображаемые координаты (Srvr/Ref) — сервис показывает их в админке,
+/// в сопоставлении они не участвуют.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionDatabaseIdentity {
+    /// `ras:<c>:<i>` либо `gen:<srvr>/<ref>` — ключ `databases.instance_id`.
+    pub instance_id: String,
+    /// `Srvr` из строки соединения (`cluster_server` в `session.register`).
+    pub cluster_server: String,
+    /// Имя ИБ из регистрации (`infobase_name`).
+    pub infobase_name: String,
 }
 
-/// Резолвер deployment bindings из конфига.
-#[derive(Debug, Clone)]
-pub struct IdentityResolver {
-    /// `client_uid` сессии → `database_id` сервиса маскирования.
-    bindings: HashMap<String, Uuid>,
-}
-
-impl IdentityResolver {
-    /// Строит resolver из deployment bindings конфига.
-    /// Повторяющиеся имена сессий отклоняются валидатором конфига; при
-    /// невозможном дубле здесь последняя привязка побеждает (config — source
-    /// of truth), что не расширяет доступ.
-    pub fn new(bindings: &[MaskingIdentityBinding]) -> Self {
-        let mut map = HashMap::with_capacity(bindings.len());
-        for binding in bindings {
-            if let Ok(database_id) = Uuid::parse_str(&binding.database_id) {
-                map.insert(binding.session.clone(), database_id);
-            }
-        }
-        Self { bindings: map }
-    }
-
-    /// Резолвит database identity по имени сессии.
-    ///
-    /// `None` для любой сессии, которой нет в конфиге: в masking-контуре
-    /// существуют только заранее известные маршруты.
-    pub fn verify(&self, record: &SessionRecord) -> Option<VerifiedDatabaseIdentity> {
-        self.bindings
-            .get(record.session_id.as_str())
-            .map(|database_id| VerifiedDatabaseIdentity {
-                database_id: *database_id,
-            })
+/// Ключ по результату RAS-резолюции либо generated-ключ из строк
+/// `Srvr`/`Ref` как есть (без нормализации).
+pub fn database_key(
+    cluster_server: &str,
+    infobase_name: &str,
+    resolved: Option<ResolvedDatabaseIdentity>,
+) -> String {
+    match resolved {
+        Some(id) => format!("ras:{}:{}", id.cluster_guid, id.infobase_guid),
+        None => format!("gen:{}/{}", cluster_server, infobase_name),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::session_manager::protocol::{SessionRegisterParams, ToolDescriptor, ToolVisibility};
-    use crate::session_manager::registry::SessionRegistry;
-    use std::time::Instant;
-
-    fn record(session: &str) -> SessionRecord {
-        let registry = SessionRegistry::new();
-        registry
-            .register(
-                SessionRegisterParams {
-                    client_uid: session.to_owned(),
-                    kind: "server".to_owned(),
-                    version: "1".to_owned(),
-                    infobase_name: "db".to_owned(),
-                    ib_session_number: 1,
-                    tools: vec![ToolDescriptor {
-                        name: "mcp_internal_masking_metadata_feed".to_owned(),
-                        description: None,
-                        input_schema: serde_json::json!({"type":"object"}),
-                        visibility: ToolVisibility::Internal,
-                    }],
-                    config_id: None,
-                    host_id: None,
-                    pid: None,
-                    resources: None,
-                    prompts: None,
-                    extras: None,
-                },
-                Instant::now(),
-                None,
-            )
-            .unwrap();
-        registry.get(session).unwrap()
-    }
-
-    #[test]
-    fn database_resolves_by_session_name() {
-        let database = Uuid::new_v4();
-        let resolver = IdentityResolver::new(&[MaskingIdentityBinding {
-            session: "server-gbig_pam_ai".to_owned(),
-            database_id: database.to_string(),
-        }]);
-
-        assert_eq!(
-            resolver.verify(&record("server-gbig_pam_ai")),
-            Some(VerifiedDatabaseIdentity {
-                database_id: database
-            })
-        );
-        assert_eq!(resolver.verify(&record("other-session")), None);
+impl SessionDatabaseIdentity {
+    /// Берёт identity из записи сессии. `None` — только когда регистрация
+    /// не прислала `cluster_server` (файловая база): такой вызов
+    /// отклоняется `DATABASE_IDENTITY_UNVERIFIED`.
+    pub fn from_record(record: &SessionRecord) -> Option<Self> {
+        let instance_id = record.database_key.clone()?;
+        Some(Self {
+            instance_id,
+            cluster_server: record.cluster_server.clone().unwrap_or_default(),
+            infobase_name: record.infobase_name.clone(),
+        })
     }
 }

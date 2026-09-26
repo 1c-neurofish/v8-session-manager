@@ -12,8 +12,9 @@ use v8_session_manager::session_manager::masking::client::{
 };
 use v8_session_manager::session_manager::protocol::ToolContent;
 
-const CONFIGURED_DATABASE_ID: &str = "123e4567-e89b-12d3-a456-426614174000";
-const UNKNOWN_DATABASE_ID: &str = "123e4567-e89b-12d3-a456-426614174099";
+const CONFIGURED_CLUSTER_GUID: &str = "123e4567-e89b-12d3-a456-426614174001";
+const CONFIGURED_INFOBASE_GUID: &str = "123e4567-e89b-12d3-a456-426614174000";
+const UNKNOWN_INFOBASE_GUID: &str = "123e4567-e89b-12d3-a456-426614174099";
 
 fn contract_client() -> MaskingServiceClient {
     let socket = std::env::var_os("MASKING_CONTRACT_SOCKET")
@@ -33,7 +34,9 @@ async fn isolated_masking_service_wire_contract() {
             schema_version: 1,
             call_id: "123e4567-e89b-12d3-a456-426614174102".to_owned(),
             correlation_id: unknown_correlation.to_owned(),
-            database_id: UNKNOWN_DATABASE_ID.to_owned(),
+            cluster_server: "onec-infra".to_owned(),
+            infobase_name: "contract-ib".to_owned(),
+            instance_id: format!("ras:{}:{}", CONFIGURED_CLUSTER_GUID, UNKNOWN_INFOBASE_GUID),
             chat_id: "contract-chat".to_owned(),
             tool_name: "get_metadata".to_owned(),
             arguments: json!({"probe": "contract"}),
@@ -54,7 +57,12 @@ async fn isolated_masking_service_wire_contract() {
             schema_version: 1,
             call_id: "123e4567-e89b-12d3-a456-426614174103".to_owned(),
             correlation_id: "123e4567-e89b-12d3-a456-426614174104".to_owned(),
-            database_id: CONFIGURED_DATABASE_ID.to_owned(),
+            cluster_server: "onec-infra".to_owned(),
+            infobase_name: "contract-ib".to_owned(),
+            instance_id: format!(
+                "ras:{}:{}",
+                CONFIGURED_CLUSTER_GUID, CONFIGURED_INFOBASE_GUID
+            ),
             chat_id: "contract-chat".to_owned(),
             tool_name: "get_metadata".to_owned(),
             arguments: arguments.clone(),
@@ -70,7 +78,12 @@ async fn isolated_masking_service_wire_contract() {
             schema_version: 1,
             call_id: "123e4567-e89b-12d3-a456-426614174105".to_owned(),
             correlation_id: "123e4567-e89b-12d3-a456-426614174106".to_owned(),
-            database_id: CONFIGURED_DATABASE_ID.to_owned(),
+            cluster_server: "onec-infra".to_owned(),
+            infobase_name: "contract-ib".to_owned(),
+            instance_id: format!(
+                "ras:{}:{}",
+                CONFIGURED_CLUSTER_GUID, CONFIGURED_INFOBASE_GUID
+            ),
             chat_id: "contract-chat".to_owned(),
             tool_name: "get_metadata".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
@@ -106,7 +119,12 @@ async fn isolated_masking_service_wire_contract() {
             schema_version: 1,
             call_id: "123e4567-e89b-12d3-a456-426614174107".to_owned(),
             correlation_id: "123e4567-e89b-12d3-a456-426614174108".to_owned(),
-            database_id: CONFIGURED_DATABASE_ID.to_owned(),
+            cluster_server: "onec-infra".to_owned(),
+            infobase_name: "contract-ib".to_owned(),
+            instance_id: format!(
+                "ras:{}:{}",
+                CONFIGURED_CLUSTER_GUID, CONFIGURED_INFOBASE_GUID
+            ),
             chat_id: "contract-chat".to_owned(),
             tool_name: "get_metadata".to_owned(),
             outcome: FinalizeOutcome::TransportError {
@@ -124,7 +142,12 @@ async fn isolated_masking_service_wire_contract() {
         schema_version: 1,
         call_id: "123e4567-e89b-12d3-a456-426614174111".to_owned(),
         correlation_id: "123e4567-e89b-12d3-a456-426614174112".to_owned(),
-        database_id: CONFIGURED_DATABASE_ID.to_owned(),
+        cluster_server: "onec-infra".to_owned(),
+        infobase_name: "contract-ib".to_owned(),
+        instance_id: format!(
+            "ras:{}:{}",
+            CONFIGURED_CLUSTER_GUID, CONFIGURED_INFOBASE_GUID
+        ),
         chat_id: "contract-chat".to_owned(),
         tool_name: "execute_query".to_owned(),
         outcome: FinalizeOutcome::ToolResult {

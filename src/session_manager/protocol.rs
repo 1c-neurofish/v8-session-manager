@@ -280,6 +280,19 @@ pub struct SessionRegisterParams {
     pub prompts: Option<Vec<Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extras: Option<Value>,
+    //++agent TASK-225 [26.09.2026] N: идентичность базы по координатам кластера.
+    /// `Srvr` из `СтрокаСоединенияИнформационнойБазы()` (передаётся ключом `cluster_server`;
+    /// может быть списком хостов). Файловые базы поля не имеют — их
+    /// сессии остаются без проверенной identity (DATABASE_IDENTITY_UNVERIFIED
+    /// на входе в masking-gate).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cluster_server: Option<String>,
+    /// Непрозрачный ключ базы `ras:<c>:<i>`/`gen:<srvr>/<ref>`,
+    /// вычисляемый менеджером после RAS-резолюции. Не принимается с
+    /// провода (`skip`): менеджер не доверяет идентификаторам адаптера.
+    #[serde(skip)]
+    pub database_key: Option<String>,
+    //++agent TASK-225
 }
 
 fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -543,6 +556,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         };
         let request = WireMessage::Request {
             id: Id::String("r1".to_owned()),

@@ -4,5 +4,6 @@ pub mod client;
 pub mod gate;
 pub mod identity;
 pub mod internal;
+pub mod ras;
 
 pub use gate::{MaskingCallContext, MaskingFailure, MaskingGate, TrustedConversationContext};

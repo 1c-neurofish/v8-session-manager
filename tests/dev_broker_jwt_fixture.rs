@@ -30,8 +30,7 @@ use tokio::time::{sleep, timeout, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use uuid::Uuid;
 use v8_session_manager::config::model::{
-    AppConfig, MaskingConfig, MaskingIdentityBinding, McpConfig, McpSessionManagerConfig,
-    ToolsCacheConfig,
+    AppConfig, MaskingConfig, McpConfig, McpSessionManagerConfig, ToolsCacheConfig,
 };
 use v8_session_manager::session_manager::protocol::{
     methods, Id, SessionRegisterParams, ToolDescriptor, ToolVisibility, WireMessage,
@@ -193,7 +192,7 @@ fn write_isolated_config(
     temp: &TempDir,
     ws_port: u16,
     http_port: u16,
-    database_id: Uuid,
+    _database_id: Uuid,
     public_key_path: &Path,
 ) -> std::path::PathBuf {
     let work_path = temp.path().join("work");
@@ -244,10 +243,6 @@ fn write_isolated_config(
             "mcp_internal_masking_metadata_feed".to_owned(),
             "mcp_internal_masking_dictionary_feed".to_owned(),
         ],
-        identity_bindings: vec![MaskingIdentityBinding {
-            session: "isolated-dev-jwt-fixture".to_owned(),
-            database_id: database_id.to_string(),
-        }],
     };
     let config = AppConfig {
         work_path,
@@ -326,6 +321,8 @@ where
         resources: None,
         prompts: None,
         extras: None,
+        cluster_server: None,
+        database_key: None,
     };
     let request = WireMessage::Request {
         id: Id::String("fixture-register".to_owned()),

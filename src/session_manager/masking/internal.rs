@@ -1,16 +1,18 @@
 //! Internal UDS endpoint для вызовов сервиса маскирования → менеджер.
 //!
-//! Контракт (см. TASK-222): единственный метод
+//! Контракт (см. TASK-222, N из TASK-225): единственный метод
 //! `POST /internal/v1/tools/call` на `masking.internal_listen_path` в том же
 //! shared volume, что и `service.sock`. Доступ ограничен peer UID равным
 //! `masking.service_expected_uid` — сокет лежит рядом с сокетом сервиса, а
 //! peer creds гарантируют, что caller именно сервис.
 //!
-//! Тело запроса — `{"database_id","name","arguments"}`. `name` должен быть в
-//! `masking.internal_tools`; иначе `404 {"success":false,"error":{"code":
-//! "method_not_found"}}`. Целевая сессия резолвится по имени из конфигурации
-//! (`identity_bindings`: session ↔ database_id), вызов уходит в 1С через
-//! обычный `tool.call` диспетчер.
+//! Тело запроса — `{"instance_id","name","arguments"}`: точный ключ базы
+//! (`ras:<c>:<i>`/`gen:<srvr>/<ref>`), тот же что `databases.instance_id`
+//! в сервисе. `name` должен быть в `masking.internal_tools`; иначе
+//! `404 {"success":false,"error":{"code":"method_not_found"}}`. Целевая
+//! сессия резолвится точным равенством `SessionRecord.database_key` —
+//! склейка баз невозможна по построению; вызов уходит в 1С через обычный
+//! `tool.call` диспетчер.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,18 +27,19 @@ use serde_json::{json, Value};
 use tokio::net::{UnixListener, UnixStream};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
-use uuid::Uuid;
 
-use crate::session_manager::masking::identity::{IdentityResolver, VerifiedDatabaseIdentity};
 use crate::session_manager::masking::MaskingGate;
 use crate::session_manager::protocol::{ToolCallParams, ToolCallResult, ToolVisibility};
-use crate::session_manager::registry::{SessionRecord, SessionRegistry, SessionState};
+use crate::session_manager::registry::{SessionRegistry, SessionState};
 
 const INTERNAL_CALL_PATH: &str = "/internal/v1/tools/call";
 const MAX_INTERNAL_REQUEST_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InternalDispatchError {
+    /// Ни одна Active-сессия не несёт этот ключ с нужным internal
+    /// tool: сервис читает как «база известна, но 1С сейчас не подключена»
+    /// → `DATABASE_NOT_CONNECTED` (retryable на стороне сервиса).
     #[error("no verified internal tool target")]
     NoTarget,
     #[error("ambiguous verified internal tool target")]
@@ -46,38 +49,32 @@ pub enum InternalDispatchError {
 }
 
 /// Target нельзя получить через agent resolver: требуется одновременно
-/// internal visibility и проверенная deployment identity базы.
+/// internal visibility и точное совпадение ключа базы.
 #[derive(Debug, Clone)]
-pub struct VerifiedInternalTarget {
-    record: SessionRecord,
-    identity: VerifiedDatabaseIdentity,
+pub(crate) struct VerifiedInternalTarget {
+    record: crate::session_manager::registry::SessionRecord,
 }
 
-/// Резолвит единственную Active-сессию, которой конфиг привязал
-/// `database_id` и которая зарегистрировала tool `tool_name` с visibility
-/// `Internal`. База = сервер+имя: сопоставление идёт по `client_uid` через
-/// `IdentityResolver`, а не по client-provided идентификаторам.
-pub fn resolve_internal_target(
+/// Резолвит единственную Active-сессию с `database_key` равным ключу
+/// запроса и tool `tool_name` с visibility `Internal`. Сравнение —
+/// только точное равенство строки: никаких координатных совпадений,
+/// ras- и generated-ключи одних и тех же координат не пересекаются.
+pub(crate) fn resolve_internal_target(
     registry: &SessionRegistry,
-    identities: &IdentityResolver,
-    database_id: &str,
-    tool_name: &str,
+    call: &InternalCallRequest,
 ) -> Result<VerifiedInternalTarget, InternalDispatchError> {
     let mut matches = registry
         .snapshot()
         .into_iter()
         .filter(|record| record.state == SessionState::Active)
-        .filter_map(|record| {
-            let identity = identities.verify(&record)?;
-            if identity.database_id.to_string() != database_id
-                || !record.tools.iter().any(|tool| {
-                    tool.name == tool_name && tool.visibility == ToolVisibility::Internal
-                })
-            {
-                return None;
-            }
-            Some(VerifiedInternalTarget { record, identity })
-        });
+        .filter(|record| record.database_key.as_deref() == Some(call.instance_id.as_str()))
+        .filter(|record| {
+            record
+                .tools
+                .iter()
+                .any(|tool| tool.name == call.name && tool.visibility == ToolVisibility::Internal)
+        })
+        .map(|record| VerifiedInternalTarget { record });
     let target = matches.next().ok_or(InternalDispatchError::NoTarget)?;
     if matches.next().is_some() {
         return Err(InternalDispatchError::AmbiguousTarget);
@@ -88,13 +85,12 @@ pub fn resolve_internal_target(
 /// Обычный `tool.call` через dispatcher целевой сессии с менеджерским
 /// дедлайном `internal_call_timeout`. Результат 1С передаётся сервису как
 /// есть — проверки страниц/cursor делает сам сервис.
-pub async fn dispatch_internal_tool(
+pub(crate) async fn dispatch_internal_tool(
     target: VerifiedInternalTarget,
     tool_name: String,
     arguments: Value,
     timeout: Duration,
 ) -> Result<ToolCallResult, InternalDispatchError> {
-    let _verified_database = target.identity;
     let connection = target
         .record
         .connection
@@ -115,10 +111,11 @@ pub async fn dispatch_internal_tool(
         .map_err(|_| InternalDispatchError::Dispatch)
 }
 
-/// Тело запроса `POST /internal/v1/tools/call`.
+/// Тело запроса `POST /internal/v1/tools/call`. `instance_id` —
+/// обязательный точный ключ базы (тот же `databases.instance_id`).
 #[derive(Debug, Deserialize)]
-struct InternalCallRequest {
-    database_id: String,
+pub(crate) struct InternalCallRequest {
+    instance_id: String,
     name: String,
     #[serde(default)]
     arguments: Value,
@@ -128,7 +125,6 @@ struct InternalCallRequest {
 struct InternalEndpointContext {
     authorized: bool,
     internal_tools: Arc<std::collections::HashSet<String>>,
-    identities: Arc<IdentityResolver>,
     registry: Arc<SessionRegistry>,
     call_timeout: Duration,
 }
@@ -146,7 +142,6 @@ pub fn spawn_internal_endpoint(
     }
     let expected_uid = gate.service_expected_uid()?;
     let path = gate.internal_listen_path().to_path_buf();
-    let identities = Arc::new(gate.identity_resolver().clone());
     let internal_tools = Arc::new(gate.internal_tools().clone());
     let call_timeout = gate.internal_call_timeout();
     Some(tokio::spawn(async move {
@@ -161,7 +156,6 @@ pub fn spawn_internal_endpoint(
         let context = InternalEndpointContext {
             authorized: false,
             internal_tools,
-            identities,
             registry,
             call_timeout,
         };
@@ -233,18 +227,10 @@ async fn handle_request(
         Ok(call) => call,
         Err(_) => return Ok(failure(StatusCode::BAD_REQUEST, "invalid_request")),
     };
-    if Uuid::parse_str(&call.database_id).is_err() {
-        return Ok(failure(StatusCode::BAD_REQUEST, "invalid_request"));
-    }
     if !context.internal_tools.contains(&call.name) {
         return Ok(failure(StatusCode::NOT_FOUND, "method_not_found"));
     }
-    let target = match resolve_internal_target(
-        &context.registry,
-        &context.identities,
-        &call.database_id,
-        &call.name,
-    ) {
+    let target = match resolve_internal_target(&context.registry, &call) {
         Ok(target) => target,
         Err(InternalDispatchError::NoTarget) => {
             return Ok(failure(StatusCode::SERVICE_UNAVAILABLE, "no_target"));
@@ -266,7 +252,7 @@ async fn handle_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{MaskingConfig, MaskingIdentityBinding};
+    use crate::config::model::MaskingConfig;
     use crate::session_manager::connection::ConnectionHandle;
     use crate::session_manager::protocol::{SessionRegisterParams, ToolDescriptor, WireMessage};
     use std::path::PathBuf;
@@ -280,19 +266,21 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
 "#;
 
     const METADATA_TOOL: &str = "mcp_internal_masking_metadata_feed";
+    const CLUSTER: &str = "0de031da-e8d9-43de-bb39-7c8bd4d9855c";
+    const INFOBASE: &str = "320f6387-89b5-43fc-b344-67b11f957472";
 
     fn own_uid() -> u32 {
         let (a, _b) = UnixStream::pair().unwrap();
         a.peer_cred().unwrap().uid()
     }
 
-    /// Enabled gate с tempdir-сокетами; identity binding — session → database.
-    fn gate_fixture(
-        dir: &tempfile::TempDir,
-        session: &str,
-        database: Uuid,
-        expected_uid: u32,
-    ) -> Arc<MaskingGate> {
+    fn ras_key() -> String {
+        format!("ras:{CLUSTER}:{INFOBASE}")
+    }
+
+    /// Enabled gate с tempdir-сокетами; маршрут — только по точному ключу
+    /// из регистрации.
+    fn gate_fixture(dir: &tempfile::TempDir, expected_uid: u32) -> Arc<MaskingGate> {
         let public_key_path = dir.path().join("broker.pub.pem");
         std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
         let config = MaskingConfig {
@@ -302,10 +290,6 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             internal_call_timeout_ms: 2_000,
             service_expected_uid: Some(expected_uid),
             broker_public_key_path: public_key_path,
-            identity_bindings: vec![MaskingIdentityBinding {
-                session: session.to_owned(),
-                database_id: database.to_string(),
-            }],
             ..MaskingConfig::default()
         };
         Arc::new(MaskingGate::from_config(&config, dir.path()).unwrap())
@@ -320,9 +304,14 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         }
     }
 
+    /// Регистрирует сессию с ключом базы: `database_key` — как после
+    /// вычисления менеджером (ras:/gen:), `None` — файл-база без ключа.
     fn register_session(
         registry: &SessionRegistry,
         session: &str,
+        cluster_server: Option<&str>,
+        infobase_name: &str,
+        database_key: Option<String>,
         tools: Vec<ToolDescriptor>,
         connection: Option<Arc<ConnectionHandle>>,
     ) {
@@ -332,7 +321,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                     client_uid: session.to_owned(),
                     kind: "server".to_owned(),
                     version: "1".to_owned(),
-                    infobase_name: "db".to_owned(),
+                    infobase_name: infobase_name.to_owned(),
                     ib_session_number: 1,
                     tools,
                     config_id: None,
@@ -341,6 +330,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                     resources: None,
                     prompts: None,
                     extras: None,
+                    cluster_server: cluster_server.map(str::to_owned),
+                    database_key,
                 },
                 Instant::now(),
                 connection,
@@ -365,60 +356,127 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         (status, serde_json::from_str(body).unwrap())
     }
 
+    fn call_body(instance_id: &str, name: &str) -> String {
+        format!(r#"{{"instance_id":"{instance_id}","name":"{name}","arguments":{{}}}}"#)
+    }
+
+    fn call_req(instance_id: &str, name: &str) -> InternalCallRequest {
+        InternalCallRequest {
+            instance_id: instance_id.to_owned(),
+            name: name.to_owned(),
+            arguments: Value::Null,
+        }
+    }
+
+    /// O2: маршрут — только точное равенство ключа; координаты в нём не
+    /// участвуют, склейка невозможна.
     #[tokio::test]
-    async fn internal_target_resolves_by_configured_session_name() {
-        let database = Uuid::new_v4();
+    async fn internal_target_resolves_by_exact_key_only() {
         let registry = SessionRegistry::new();
-        register_session(&registry, "server-gbig_pam_ai", vec![internal_tool()], None);
-        register_session(&registry, "other-session", vec![internal_tool()], None);
-
-        let identities = IdentityResolver::new(&[MaskingIdentityBinding {
-            session: "server-gbig_pam_ai".to_owned(),
-            database_id: database.to_string(),
-        }]);
-
-        assert!(resolve_internal_target(
+        register_session(
             &registry,
-            &identities,
-            &database.to_string(),
-            METADATA_TOOL
+            "server-gbig_pam_ai",
+            Some("onec-infra:1541"),
+            "gbig_pam_ai",
+            Some(ras_key()),
+            vec![internal_tool()],
+            None,
+        );
+        // Сессия той же ИБ, но без internal-инструмента.
+        register_session(
+            &registry,
+            "same-key-no-tools",
+            Some("onec-infra:1541"),
+            "gbig_pam_ai",
+            Some(ras_key()),
+            vec![],
+            None,
+        );
+        // generated-ключ тех же координат — отдельная «база».
+        register_session(
+            &registry,
+            "same-coords-gen",
+            Some("onec-infra:1541"),
+            "gbig_pam_ai",
+            Some("gen:onec-infra:1541/gbig_pam_ai".to_owned()),
+            vec![internal_tool()],
+            None,
+        );
+        // Сессия без ключа (файловая база).
+        register_session(
+            &registry,
+            "file-ib",
+            None,
+            "file_ib",
+            None,
+            vec![internal_tool()],
+            None,
+        );
+
+        // Точный ras-ключ → сессия с тем же ключом.
+        assert!(resolve_internal_target(&registry, &call_req(&ras_key(), METADATA_TOOL)).is_ok());
+        // Точный gen-ключ → generated-сессия, а не ras-сессия тех же координат.
+        let target = resolve_internal_target(
+            &registry,
+            &call_req("gen:onec-infra:1541/gbig_pam_ai", METADATA_TOOL),
         )
-        .is_ok());
-        // Чужой database_id и сессия без internal-дескриптора не резолвятся.
+        .unwrap();
+        assert_eq!(
+            target.record.session_id, "same-coords-gen",
+            "ген-ключ маршрутится только в свою сессию"
+        );
+        // Другой ras-ключ (та же ИБ, другой кластер) → no_target.
         assert!(matches!(
             resolve_internal_target(
                 &registry,
-                &identities,
-                &Uuid::new_v4().to_string(),
-                METADATA_TOOL
+                &call_req(
+                    &format!("ras:{}:{}", uuid::Uuid::new_v4(), INFOBASE),
+                    METADATA_TOOL
+                ),
             ),
             Err(InternalDispatchError::NoTarget)
         ));
+        // Ключ без активной сессии/инструмента → no_target.
         assert!(matches!(
-            resolve_internal_target(&registry, &identities, &database.to_string(), "other_tool"),
+            resolve_internal_target(&registry, &call_req("gen:x/y", METADATA_TOOL)),
             Err(InternalDispatchError::NoTarget)
+        ));
+        assert!(matches!(
+            resolve_internal_target(&registry, &call_req(&ras_key(), "other_tool")),
+            Err(InternalDispatchError::NoTarget)
+        ));
+        // Два активных кандидата с одним ключом → ambiguous_target.
+        register_session(
+            &registry,
+            "duplicate",
+            Some("onec-infra:1541"),
+            "gbig_pam_ai",
+            Some(ras_key()),
+            vec![internal_tool()],
+            None,
+        );
+        assert!(matches!(
+            resolve_internal_target(&registry, &call_req(&ras_key(), METADATA_TOOL)),
+            Err(InternalDispatchError::AmbiguousTarget)
         ));
     }
 
     #[tokio::test]
     async fn dispatch_internal_tool_round_trips_tool_call() {
-        let database = Uuid::new_v4();
         let registry = SessionRegistry::new();
         let (tx, mut outbound) = mpsc::unbounded_channel();
         let connection = Arc::new(ConnectionHandle::new(tx));
         register_session(
             &registry,
             "server-gbig_pam_ai",
+            Some("onec-infra:1541"),
+            "gbig_pam_ai",
+            Some(ras_key()),
             vec![internal_tool()],
             Some(Arc::clone(&connection)),
         );
-        let identities = IdentityResolver::new(&[MaskingIdentityBinding {
-            session: "server-gbig_pam_ai".to_owned(),
-            database_id: database.to_string(),
-        }]);
         let target =
-            resolve_internal_target(&registry, &identities, &database.to_string(), METADATA_TOOL)
-                .unwrap();
+            resolve_internal_target(&registry, &call_req(&ras_key(), METADATA_TOOL)).unwrap();
 
         let responder = tokio::spawn(async move {
             let msg = outbound.recv().await.unwrap();
@@ -452,18 +510,25 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     #[tokio::test]
     async fn endpoint_rejects_foreign_uid_and_unknown_tool_name() {
         let dir = tempfile::tempdir().unwrap();
-        let database = Uuid::new_v4();
         let registry = Arc::new(SessionRegistry::new());
-        register_session(&registry, "server-gbig_pam_ai", vec![internal_tool()], None);
+        register_session(
+            &registry,
+            "server-gbig_pam_ai",
+            Some("onec-infra:1541"),
+            "gbig_pam_ai",
+            Some(ras_key()),
+            vec![internal_tool()],
+            None,
+        );
 
         // Peer UID чужой — каждый запрос отклоняется forbidden до проверки пути.
-        let gate = gate_fixture(&dir, "server-gbig_pam_ai", database, own_uid() + 1_000);
+        let gate = gate_fixture(&dir, own_uid() + 1_000);
         let shutdown = CancellationToken::new();
         let task = spawn_internal_endpoint(gate, Arc::clone(&registry), shutdown.clone()).unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
         let (status, body) = http_post(
             &dir.path().join("manager.sock"),
-            br#"{"database_id":"x","name":"mcp_internal_masking_metadata_feed","arguments":{}}"#,
+            call_body(&ras_key(), METADATA_TOOL).as_bytes(),
         )
         .await;
         assert_eq!(status, 403);
@@ -474,60 +539,61 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
 
         // Свой UID, но имя вне masking.internal_tools → method_not_found.
         let dir2 = tempfile::tempdir().unwrap();
-        let gate = gate_fixture(&dir2, "server-gbig_pam_ai", database, own_uid());
+        let gate = gate_fixture(&dir2, own_uid());
         let shutdown = CancellationToken::new();
         let task = spawn_internal_endpoint(gate, Arc::clone(&registry), shutdown.clone()).unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
         let (status, body) = http_post(
             &dir2.path().join("manager.sock"),
-            br#"{"database_id":"cc370548-d259-4093-ac21-97e066cf0f62","name":"execute_query","arguments":{}}"#,
+            call_body(&ras_key(), "execute_query").as_bytes(),
         )
         .await;
         assert_eq!(status, 404);
         assert_eq!(body["error"]["code"], "method_not_found");
 
-        // Невалидный database_id → invalid_request.
+        // Невалидный JSON → invalid_request (serde до маршрутизации).
         let (status, body) = http_post(
             &dir2.path().join("manager.sock"),
-            br#"{"database_id":"not-a-uuid","name":"mcp_internal_masking_metadata_feed","arguments":{}}"#,
+            br#"{"instance_id":123,"name":"x"}"#,
         )
         .await;
         assert_eq!(status, 400);
         assert_eq!(body["error"]["code"], "invalid_request");
 
-        // Чужой database_id → no_target.
+        // Ключ без активной сессии (база существует в сервисе, но 1С не
+        // подключена) → no_target.
         let (status, body) = http_post(
             &dir2.path().join("manager.sock"),
-            format!(
-                r#"{{"database_id":"{}","name":"{}","arguments":{{}}}}"#,
-                Uuid::new_v4(),
-                METADATA_TOOL
+            call_body(
+                &format!("ras:{CLUSTER}:{}", uuid::Uuid::new_v4()),
+                METADATA_TOOL,
             )
             .as_bytes(),
         )
         .await;
         assert_eq!(status, 503);
         assert_eq!(body["error"]["code"], "no_target");
-
         shutdown.cancel();
         task.await.unwrap();
     }
 
     #[tokio::test]
-    async fn endpoint_dispatches_internal_tool_to_bound_session() {
+    async fn endpoint_dispatches_internal_tool_by_exact_key() {
         let dir = tempfile::tempdir().unwrap();
-        let database = Uuid::new_v4();
         let registry = Arc::new(SessionRegistry::new());
         let (tx, mut outbound) = mpsc::unbounded_channel();
         let connection = Arc::new(ConnectionHandle::new(tx));
         register_session(
             &registry,
             "server-gbig_pam_ai",
+            Some("onec-infra:1541"),
+            "gbig_pam_ai",
+            Some(ras_key()),
             vec![internal_tool()],
             Some(Arc::clone(&connection)),
         );
 
-        let gate = gate_fixture(&dir, "server-gbig_pam_ai", database, own_uid());
+        let gate = gate_fixture(&dir, own_uid());
         let shutdown = CancellationToken::new();
         let task = spawn_internal_endpoint(gate, Arc::clone(&registry), shutdown.clone()).unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -553,7 +619,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         let (status, body) = http_post(
             &dir.path().join("manager.sock"),
             format!(
-                r#"{{"database_id":"{database}","name":"{METADATA_TOOL}","arguments":{{"selector":{{}},"cursor":null}}}}"#
+                r#"{{"instance_id":"{}","name":"{METADATA_TOOL}","arguments":{{"selector":{{}},"cursor":null}}}}"#,
+                ras_key()
             )
             .as_bytes(),
         )

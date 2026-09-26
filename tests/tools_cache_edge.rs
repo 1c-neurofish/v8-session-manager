@@ -43,6 +43,8 @@ fn register_params(uid: &str, kind: &str, tools: Vec<ToolDescriptor>) -> Session
         resources: None,
         prompts: None,
         extras: None,
+        cluster_server: None,
+        database_key: None,
     }
 }
 

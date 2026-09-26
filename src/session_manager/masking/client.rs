@@ -20,7 +20,14 @@ pub struct PreflightRequest {
     pub schema_version: u8,
     pub call_id: String,
     pub correlation_id: String,
-    pub database_id: String,
+    //++agent TASK-225 [26.09.2026] O2: база адресуется точным ключом
+    // `instance_id` (`ras:<c>:<i>`/`gen:<srvr>/<ref>`), вычисленным
+    // менеджером при session.register. `cluster_server`/`infobase_name`
+    // — отображаемые координаты (Srvr/Ref) для записи/админки.
+    pub instance_id: String,
+    pub cluster_server: String,
+    pub infobase_name: String,
+    //++agent TASK-225
     pub chat_id: String,
     pub tool_name: String,
     pub arguments: Value,
@@ -38,7 +45,11 @@ pub struct FinalizeRequest {
     pub schema_version: u8,
     pub call_id: String,
     pub correlation_id: String,
-    pub database_id: String,
+    //++agent TASK-225 [26.09.2026] O2: см. PreflightRequest.
+    pub instance_id: String,
+    pub cluster_server: String,
+    pub infobase_name: String,
+    //++agent TASK-225
     pub chat_id: String,
     pub tool_name: String,
     pub outcome: FinalizeOutcome,
@@ -81,10 +92,16 @@ pub struct TerminalRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TerminalScope {
+    //++agent TASK-225 [26.09.2026] O2: verified-scope несёт точный ключ
+    // базы + координаты для отображения — сервис сопоставляет по
+    // `instance_id` со своим реестром databases.
     Verified {
-        database_id: String,
+        instance_id: String,
+        cluster_server: String,
+        infobase_name: String,
         chat_id: String,
     },
+    //++agent TASK-225
     Unverified,
 }
 
@@ -105,6 +122,12 @@ pub struct ServiceError {
     pub message: String,
     pub correlation_id: String,
     pub retryable: bool,
+    //++agent TASK-225 [26.09.2026] фаза-2 C
+    /// Оценка «повторить через N с» у SERVICE_WARMING_UP; поле новое —
+    /// старый сервис его не отдаёт, поэтому default.
+    #[serde(default)]
+    pub retry_after_s: Option<u64>,
+    //++agent TASK-225
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -222,6 +245,9 @@ impl MaskingServiceClient {
     /// (`GET /internal/v1/setup/export`). Тело ответа — непрозрачный
     /// `Value`: формат §1 валидирует сервис, менеджер проксирует его в
     /// MCP-инструмент без собственной типизации.
+    //++agent TASK-225 [26.09.2026] O/R5-2: экспорт настройки адресуется
+    // UUID записи `databases` сервиса — как до раздела N (координаты для
+    // экспорта не нужны).
     pub async fn setup_export(
         &self,
         database_id: &str,
@@ -265,7 +291,9 @@ fn serialize_finalize_request(request: &FinalizeRequest) -> Result<Vec<u8>, Clie
         schema_version: request.schema_version,
         call_id: request.call_id.clone(),
         correlation_id: request.correlation_id.clone(),
-        database_id: request.database_id.clone(),
+        instance_id: request.instance_id.clone(),
+        cluster_server: request.cluster_server.clone(),
+        infobase_name: request.infobase_name.clone(),
         chat_id: request.chat_id.clone(),
         tool_name: request.tool_name.clone(),
         outcome: FinalizeOutcome::TransportError {
@@ -345,7 +373,11 @@ mod tests {
             schema_version: 1,
             call_id: "call".to_owned(),
             correlation_id: "corr".to_owned(),
-            database_id: "db".to_owned(),
+            cluster_server: "onec-infra".to_owned(),
+            infobase_name: "db".to_owned(),
+            instance_id:
+                "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003"
+                    .to_owned(),
             chat_id: "chat".to_owned(),
             tool_name: "execute_query".to_owned(),
             arguments: json!({"query": "select"}),
@@ -359,7 +391,11 @@ mod tests {
             schema_version: 1,
             call_id: "call".to_owned(),
             correlation_id: "corr".to_owned(),
-            database_id: "db".to_owned(),
+            cluster_server: "onec-infra".to_owned(),
+            infobase_name: "db".to_owned(),
+            instance_id:
+                "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003"
+                    .to_owned(),
             chat_id: "chat".to_owned(),
             tool_name: "execute_query".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
@@ -383,7 +419,11 @@ mod tests {
             tool_name: "execute_query".to_owned(),
             error_code: "SERVICE_NOT_READY".to_owned(),
             scope: TerminalScope::Verified {
-                database_id: "123e4567-e89b-12d3-a456-426614174003".to_owned(),
+                cluster_server: "onec-infra".to_owned(),
+                infobase_name: "contract-ib".to_owned(),
+                instance_id:
+                    "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003"
+                        .to_owned(),
                 chat_id: "opaque-chat".to_owned(),
             },
         };
@@ -397,7 +437,9 @@ mod tests {
                 "error_code": "SERVICE_NOT_READY",
                 "scope": {
                     "kind": "verified",
-                    "database_id": "123e4567-e89b-12d3-a456-426614174003",
+                    "instance_id": "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003",
+                    "cluster_server": "onec-infra",
+                    "infobase_name": "contract-ib",
                     "chat_id": "opaque-chat"
                 }
             })
@@ -413,7 +455,7 @@ mod tests {
         };
         let wire = serde_json::to_value(unverified_terminal).unwrap();
         assert_eq!(wire["scope"], json!({"kind": "unverified"}));
-        assert!(wire["scope"].get("database_id").is_none());
+        assert!(wire["scope"].get("instance_id").is_none());
         assert!(wire["scope"].get("chat_id").is_none());
     }
 
@@ -424,7 +466,11 @@ mod tests {
             schema_version: 1,
             call_id: "123e4567-e89b-12d3-a456-426614174001".to_owned(),
             correlation_id: "123e4567-e89b-12d3-a456-426614174002".to_owned(),
-            database_id: "123e4567-e89b-12d3-a456-426614174003".to_owned(),
+            cluster_server: "onec-infra".to_owned(),
+            infobase_name: "contract-ib".to_owned(),
+            instance_id:
+                "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003"
+                    .to_owned(),
             chat_id: "opaque-chat".to_owned(),
             tool_name: "execute_query".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
@@ -441,7 +487,8 @@ mod tests {
         let wire: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(wire["call_id"], request.call_id);
         assert_eq!(wire["correlation_id"], request.correlation_id);
-        assert_eq!(wire["database_id"], request.database_id);
+        assert_eq!(wire["instance_id"], request.instance_id);
+        assert_eq!(wire["infobase_name"], request.infobase_name);
         assert_eq!(wire["chat_id"], request.chat_id);
         assert_eq!(wire["tool_name"], request.tool_name);
         assert_eq!(wire["outcome"]["kind"], "transport_error");
