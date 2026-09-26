@@ -217,6 +217,27 @@ impl MaskingServiceClient {
             .map_err(|_| ClientError::Timeout)?
     }
 
+    //++agent TASK-225 [26.09.2026]
+    /// ОВ-2/Б12: read-only экспорт настройки активной версии
+    /// (`GET /internal/v1/setup/export`). Тело ответа — непрозрачный
+    /// `Value`: формат §1 валидирует сервис, менеджер проксирует его в
+    /// MCP-инструмент без собственной типизации.
+    pub async fn setup_export(
+        &self,
+        database_id: &str,
+        include_tools: bool,
+    ) -> Result<Value, ClientError> {
+        let path = format!(
+            "/internal/v1/setup/export?database_id={database_id}&include_tools={}",
+            u8::from(include_tools)
+        );
+        let future = request_json(&self.socket_path, hyper::Method::GET, &path, Vec::new());
+        tokio::time::timeout(self.preflight_timeout, future)
+            .await
+            .map_err(|_| ClientError::Timeout)?
+    }
+    //--agent TASK-225
+
     async fn post<T, R>(&self, path: &str, payload: &T, timeout: Duration) -> Result<R, ClientError>
     where
         T: Serialize + ?Sized,

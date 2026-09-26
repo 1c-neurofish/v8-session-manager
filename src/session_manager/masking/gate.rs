@@ -375,6 +375,14 @@ impl MaskingGate {
         })
     }
 
+    //++agent TASK-225 [26.09.2026]
+    /// ОВ-2/Б12: клиент сервиса для read-only вызовов вне контура
+    /// маскирования (`masking_export_setup`). `None` — masking.enabled=false.
+    pub(crate) fn service_client(&self) -> Option<&MaskingServiceClient> {
+        self.client.as_ref()
+    }
+    //--agent TASK-225
+
     pub fn verify_database(&self, record: &SessionRecord) -> Option<VerifiedDatabaseIdentity> {
         self.identity.verify(record)
     }

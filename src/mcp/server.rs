@@ -342,6 +342,54 @@ impl McpToolServer {
         });
         Ok(CallToolResult::structured(value))
     }
+
+    //++agent TASK-225 [26.09.2026]
+    /// ОВ-2/Б12: read-only экспорт настройки маскирования (JSON §1 активной
+    /// версии). Вызов идёт мимо контура маскирования — ответ содержит только
+    /// конфигурацию, без значений словаря, токенов и истории.
+    #[tool(
+        description = "Export active masking setup (masking-setup/v1 JSON). Read-only; database = database UUID."
+    )]
+    async fn masking_export_setup(
+        &self,
+        Parameters(req): Parameters<crate::mcp::request::McpMaskingExportSetupRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Some(client) = self.masking_gate.service_client() else {
+            return Ok(CallToolResult::structured(serde_json::json!({
+                "exported": false,
+                "code": "MASKING_DISABLED",
+                "message": "masking integration is not enabled"
+            })));
+        };
+        if uuid::Uuid::parse_str(&req.database).is_err() {
+            return Ok(CallToolResult::structured(serde_json::json!({
+                "exported": false,
+                "code": "DATABASE_INVALID",
+                "message": "database must be a UUID"
+            })));
+        }
+        match client
+            .setup_export(&req.database, req.include_tools.unwrap_or(false))
+            .await
+        {
+            Ok(body) => Ok(CallToolResult::structured(body)),
+            Err(crate::session_manager::masking::client::ClientError::Service {
+                status,
+                error,
+            }) => Ok(CallToolResult::structured(serde_json::json!({
+                "exported": false,
+                "code": error.code,
+                "message": error.message,
+                "http_status": status.as_u16(),
+            }))),
+            Err(error) => Ok(CallToolResult::structured(serde_json::json!({
+                "exported": false,
+                "code": "SERVICE_UNAVAILABLE",
+                "message": error.to_string(),
+            }))),
+        }
+    }
+    //--agent TASK-225
 }
 
 impl ServerHandler for McpToolServer {
