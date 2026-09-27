@@ -90,7 +90,11 @@ pub fn list(registry: &Arc<SessionRegistry>) -> SessionListResult {
             ib_session_number: rec.ib_session_number,
             host_id: rec.host_id,
             state: rec.state.into(),
-            tools: rec.tools,
+            tools: rec
+                .tools
+                .into_iter()
+                .filter(|tool| tool.visibility.is_public())
+                .collect(),
         })
         .collect();
     sessions.sort_by(|a, b| a.session_id.cmp(&b.session_id));
@@ -120,6 +124,7 @@ mod tests {
                 name: tool.to_owned(),
                 description: None,
                 input_schema: json!({}),
+                visibility: Default::default(),
             }],
             config_id: None,
             host_id: None,
@@ -127,6 +132,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         }
     }
 
@@ -166,6 +173,16 @@ mod tests {
         assert_eq!(result.sessions[0].state, SessionStateView::Disconnected);
         // `Some(_)` — сам факт наличия таймстампа важнее точного значения.
         assert!(result.sessions[0].disconnected_secs_ago.is_some());
+    }
+
+    #[test]
+    fn session_list_does_not_expose_internal_tools() {
+        let reg = Arc::new(SessionRegistry::new());
+        let mut registration = params("uid-internal", "server", "mcp_internal_feed");
+        registration.tools[0].visibility =
+            crate::session_manager::protocol::ToolVisibility::Internal;
+        reg.register(registration, Instant::now(), None).unwrap();
+        assert!(list(&reg).sessions[0].tools.is_empty());
     }
 
     /// Acceptance #1 backlog'а этапа 1: регистрация через WS → видна в `session.list`.
@@ -208,9 +225,7 @@ mod tests {
                 "tools": [{"name": "echo", "input_schema": {"type": "object"}}]
             }
         });
-        ws.send(WsMessage::Text(req.to_string().into()))
-            .await
-            .unwrap();
+        ws.send(WsMessage::Text(req.to_string())).await.unwrap();
         let _ = ws.next().await; // ack
 
         // session.list видит запись A

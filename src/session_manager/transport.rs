@@ -34,6 +34,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::model::McpSessionManagerConfig;
 use crate::session_manager::connection::ConnectionHandle;
+use crate::session_manager::masking::MaskingGate;
 use crate::session_manager::protocol::{
     error_codes, methods, EmptyResult, Id, JsonRpcError, SessionRegisterParams,
     SessionRegisterResult, SessionToolsChangedParams, WireMessage,
@@ -60,6 +61,7 @@ struct AppState {
     registry: Arc<SessionRegistry>,
     config: Arc<McpSessionManagerConfig>,
     server_version: Arc<String>,
+    masking_gate: Option<Arc<MaskingGate>>,
 }
 
 /// Поднимает WS-сервер на `config.bind_address` + `config.path` и фоновый sweeper.
@@ -71,13 +73,32 @@ pub async fn start(
     config: McpSessionManagerConfig,
     server_version: impl Into<String>,
 ) -> std::io::Result<RunningTransport> {
+    start_inner(registry, config, server_version.into(), None).await
+}
+
+pub async fn start_with_masking(
+    registry: Arc<SessionRegistry>,
+    config: McpSessionManagerConfig,
+    server_version: impl Into<String>,
+    masking_gate: Arc<MaskingGate>,
+) -> std::io::Result<RunningTransport> {
+    start_inner(registry, config, server_version.into(), Some(masking_gate)).await
+}
+
+async fn start_inner(
+    registry: Arc<SessionRegistry>,
+    config: McpSessionManagerConfig,
+    server_version: String,
+    masking_gate: Option<Arc<MaskingGate>>,
+) -> std::io::Result<RunningTransport> {
     let listener = TcpListener::bind(&config.bind_address).await?;
     let local_addr = listener.local_addr()?;
 
     let state = AppState {
         registry: Arc::clone(&registry),
         config: Arc::new(config.clone()),
-        server_version: Arc::new(server_version.into()),
+        server_version: Arc::new(server_version),
+        masking_gate,
     };
 
     let app = Router::new()
@@ -98,7 +119,7 @@ pub async fn start(
 
     let sweeper_registry = Arc::clone(&registry);
     let grace = Duration::from_secs(config.reconnection_grace_secs);
-    let sweep_interval = Duration::from_secs(grace.as_secs().max(1).min(30));
+    let sweep_interval = Duration::from_secs(grace.as_secs().clamp(1, 30));
     let sweeper_handle = tokio::spawn(async move {
         run_grace_sweeper(sweeper_registry, grace, sweep_interval).await;
     });
@@ -325,7 +346,7 @@ async fn run_connection(
 
         match msg {
             Message::Text(text) => {
-                debug!(text_len = text.len(), preview = %text.chars().take(160).collect::<String>(), "ws text frame");
+                debug!(text_len = text.len(), "ws text frame");
                 match WireMessage::parse(&text) {
                     Ok(wire) => {
                         if let Err(err) = dispatch(&state, &peer, &connection, wire, &tx).await {
@@ -378,6 +399,17 @@ enum ConnectionError {
     Bye,
 }
 
+const MAX_LOGGED_ID_LENGTH: usize = 1024;
+
+fn unknown_response_id_summary(id: &Id) -> (&'static str, usize) {
+    let (id_type, length_bytes) = match id {
+        Id::String(value) => ("string", value.len()),
+        Id::Number(value) => ("number", value.to_string().len()),
+        Id::Null => ("null", 4),
+    };
+    (id_type, length_bytes.min(MAX_LOGGED_ID_LENGTH))
+}
+
 async fn dispatch(
     state: &AppState,
     peer: &ConnectionContext,
@@ -396,7 +428,11 @@ async fn dispatch(
         WireMessage::Response { id, result } => {
             // ADR-0023: ответы от клиента маршрутизируются в pending‑таблицу outbound‑вызовов.
             if !connection.complete_response(id.clone(), result) {
-                warn!(?id, "session-manager: response with unknown id; dropped");
+                let (id_type, id_length_bytes) = unknown_response_id_summary(&id);
+                warn!(
+                    id_type,
+                    id_length_bytes, "session-manager: response with unknown id; dropped"
+                );
             }
             Ok(())
         }
@@ -429,7 +465,7 @@ async fn handle_request(
                 );
                 return Ok(());
             }
-            let parsed: SessionRegisterParams = match serde_json::from_value(params) {
+            let mut parsed: SessionRegisterParams = match serde_json::from_value(params) {
                 Ok(p) => p,
                 Err(err) => {
                     send_error(tx, id, error_codes::INVALID_PARAMS, format!("{err}"));
@@ -438,19 +474,60 @@ async fn handle_request(
             };
             let now = Instant::now();
             let client_uid = parsed.client_uid.clone();
+            // Visibility помечается конфигом (`masking.internal_tools`), а не
+            // adapter-provided полем: internal-имя приходит от 1С, метку
+            // ставит менеджер — иначе 1С могла бы спрятать managed tool.
+            // Adapter-declared `Internal` сохраняется и без gate: ограничение
+            // видимости никогда не расширяется до public.
+            // Без gate конфигурации internal-имён нет: adapter-declared
+            // `Internal` сохраняется как fail-safe.
+            if let Some(gate) = state.masking_gate.as_ref() {
+                gate.normalize_tools(&mut parsed.tools);
+            }
+            //++agent TASK-225 [26.09.2026] O2: ключ базы вычисляется
+            // менеджером при регистрации — один проход RAS-резолюции по
+            // `cluster_server`+`infobase_name`; результат с провода
+            // игнорируется (`serde skip`). RAS недоступен → generated-
+            // ключ `gen:<srvr>/<ref>` verbatim; регистрация не блокируется.
+            if let (Some(gate), Some(cluster_server)) = (
+                state.masking_gate.as_ref(),
+                parsed
+                    .cluster_server
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty()),
+            ) {
+                let resolved = match gate.ras_resolver() {
+                    Some(resolver) => {
+                        let resolved = resolver
+                            .resolve(cluster_server, &parsed.infobase_name)
+                            .await;
+                        if resolved.is_none() {
+                            tracing::warn!(
+                                cluster_server,
+                                infobase = %parsed.infobase_name,
+                                "masking: RAS identity resolution failed; generated key used"
+                            );
+                        }
+                        resolved
+                    }
+                    None => None,
+                };
+                parsed.database_key =
+                    Some(crate::session_manager::masking::identity::database_key(
+                        cluster_server,
+                        &parsed.infobase_name,
+                        resolved,
+                    ));
+            }
+            //++agent TASK-225
             match state
                 .registry
-                .register(parsed, now, Some(Arc::clone(connection)))
+                .register_with_generation(parsed, now, Some(Arc::clone(connection)))
             {
-                Ok(outcome) => {
+                Ok((outcome, generation)) => {
                     // BLOCKER-2: фиксируем поколение коннекта для этого peer'а,
                     // чтобы последующий disconnect/bye мог использовать
                     // generation-aware варианты mark_disconnected/remove.
-                    let generation = state
-                        .registry
-                        .get(&client_uid)
-                        .map(|r| r.connection_generation)
-                        .unwrap_or(0);
                     peer.set(client_uid.clone(), generation);
                     let result = SessionRegisterResult {
                         session_id: client_uid.clone(),
@@ -535,13 +612,21 @@ async fn handle_notification(
                 warn!("session.tools_changed before session.register; ignored");
                 return;
             };
-            let parsed: SessionToolsChangedParams = match serde_json::from_value(params) {
+            let mut parsed: SessionToolsChangedParams = match serde_json::from_value(params) {
                 Ok(p) => p,
                 Err(err) => {
                     warn!(?err, "session.tools_changed: invalid params");
                     return;
                 }
             };
+            // Та же нормализация, что и при register: internal-метка ставится
+            // по имени из конфига, adapter-provided `Public` не доверена,
+            // adapter-declared `Internal` сохраняется как fail-safe.
+            // Без gate: adapter-declared `Internal` сохраняется как
+            // fail-safe (см. register).
+            if let Some(gate) = state.masking_gate.as_ref() {
+                gate.normalize_tools(&mut parsed.tools);
+            }
             state.registry.update_tools(&session_id, parsed.tools);
         }
         other => {
@@ -568,6 +653,17 @@ mod tests {
     use crate::session_manager::protocol::ToolDescriptor;
     use serde_json::{json, Value};
     use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
+
+    #[test]
+    fn unknown_response_id_summary_omits_content_and_caps_length() {
+        let untrusted = "secret\nauthorization: bearer token".repeat(100);
+        assert_eq!(
+            unknown_response_id_summary(&Id::String(untrusted)),
+            ("string", MAX_LOGGED_ID_LENGTH)
+        );
+        assert_eq!(unknown_response_id_summary(&Id::Number(-42)), ("number", 3));
+        assert_eq!(unknown_response_id_summary(&Id::Null), ("null", 4));
+    }
 
     fn test_config() -> McpSessionManagerConfig {
         McpSessionManagerConfig {
@@ -623,6 +719,7 @@ mod tests {
                     name: tool.to_owned(),
                     description: None,
                     input_schema: json!({"type": "object"}),
+                    visibility: Default::default(),
                 }],
                 config_id: None,
                 host_id: None,
@@ -630,6 +727,8 @@ mod tests {
                 resources: None,
                 prompts: None,
                 extras: None,
+                cluster_server: None,
+                database_key: None,
             })
             .unwrap(),
         };
@@ -657,11 +756,9 @@ mod tests {
     async fn register_flow_creates_session_and_responds() {
         let (registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-1", "client", "echo").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-1", "client", "echo")))
+            .await
+            .unwrap();
 
         let resp = next_text(&mut ws).await;
         let parsed = WireMessage::parse(&resp).unwrap();
@@ -682,22 +779,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn adapter_internal_tool_stays_internal_when_masking_gate_is_not_enabled() {
+        // Adapter-provided `internal` — ограничение, которое не расширяется
+        // до public даже при выключенном masking. Tool остаётся в record
+        // (для internal dispatch), но невидим для agent view.
+        let (registry, running, url) = boot().await;
+        let mut ws = connect(&url).await;
+        let mut request: Value =
+            serde_json::from_str(&register_text("uid-internal", "server", "hidden")).unwrap();
+        request["params"]["tools"][0]["visibility"] = Value::String("internal".to_owned());
+        ws.send(WsMessage::Text(request.to_string())).await.unwrap();
+
+        let response = WireMessage::parse(&next_text(&mut ws).await).unwrap();
+        match response {
+            WireMessage::Response { result, .. } => assert!(result.is_ok()),
+            other => panic!("unexpected: {other:?}"),
+        }
+        let record = registry.get("uid-internal").unwrap();
+        assert_eq!(record.tools.len(), 1);
+        assert!(matches!(
+            record.tools[0].visibility,
+            crate::session_manager::protocol::ToolVisibility::Internal
+        ));
+        ws.close(None).await.ok();
+        running.shutdown();
+    }
+
+    #[tokio::test]
     async fn duplicate_uid_returns_collision_error() {
         let (_registry, running, url) = boot().await;
         let mut ws1 = connect(&url).await;
-        ws1.send(WsMessage::Text(
-            register_text("uid-x", "client", "a").into(),
-        ))
-        .await
-        .unwrap();
+        ws1.send(WsMessage::Text(register_text("uid-x", "client", "a")))
+            .await
+            .unwrap();
         let _ = next_text(&mut ws1).await;
 
         let mut ws2 = connect(&url).await;
-        ws2.send(WsMessage::Text(
-            register_text("uid-x", "client", "b").into(),
-        ))
-        .await
-        .unwrap();
+        ws2.send(WsMessage::Text(register_text("uid-x", "client", "b")))
+            .await
+            .unwrap();
         let resp = next_text(&mut ws2).await;
         let parsed = WireMessage::parse(&resp).unwrap();
         match parsed {
@@ -720,20 +840,16 @@ mod tests {
         // mark_disconnected при разрыве заденет только последнюю identity.
         let (registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-first", "client", "a").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-first", "client", "a")))
+            .await
+            .unwrap();
         let _ = next_text(&mut ws).await;
         assert_eq!(registry.len(), 1);
 
         // Второй register на ТОМ же WS под другим uid.
-        ws.send(WsMessage::Text(
-            register_text("uid-second", "client", "b").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-second", "client", "b")))
+            .await
+            .unwrap();
         let resp = next_text(&mut ws).await;
         let parsed = WireMessage::parse(&resp).unwrap();
         match parsed {
@@ -756,11 +872,9 @@ mod tests {
     async fn disconnect_marks_session_then_grace_removes() {
         let (registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-d", "client", "x").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-d", "client", "x")))
+            .await
+            .unwrap();
         let _ = next_text(&mut ws).await;
         assert_eq!(registry.len(), 1);
 
@@ -802,11 +916,9 @@ mod tests {
     async fn reconnect_within_grace_restores_session() {
         let (registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-r", "client", "v1").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-r", "client", "v1")))
+            .await
+            .unwrap();
         let _ = next_text(&mut ws).await;
         ws.close(None).await.ok();
         drop(ws);
@@ -823,11 +935,9 @@ mod tests {
 
         // reconnect быстро (до grace 1s)
         let mut ws2 = connect(&url).await;
-        ws2.send(WsMessage::Text(
-            register_text("uid-r", "client", "v2").into(),
-        ))
-        .await
-        .unwrap();
+        ws2.send(WsMessage::Text(register_text("uid-r", "client", "v2")))
+            .await
+            .unwrap();
         let resp = next_text(&mut ws2).await;
         let parsed = WireMessage::parse(&resp).unwrap();
         match parsed {
@@ -857,9 +967,7 @@ mod tests {
             method: methods::PING.to_owned(),
             params: Value::Null,
         };
-        ws.send(WsMessage::Text(req.to_text().into()))
-            .await
-            .unwrap();
+        ws.send(WsMessage::Text(req.to_text())).await.unwrap();
         let resp = next_text(&mut ws).await;
         let parsed = WireMessage::parse(&resp).unwrap();
         match parsed {
@@ -883,9 +991,7 @@ mod tests {
             method: "unknown.method".to_owned(),
             params: Value::Null,
         };
-        ws.send(WsMessage::Text(req.to_text().into()))
-            .await
-            .unwrap();
+        ws.send(WsMessage::Text(req.to_text())).await.unwrap();
         let resp = next_text(&mut ws).await;
         let parsed = WireMessage::parse(&resp).unwrap();
         match parsed {
@@ -903,7 +1009,7 @@ mod tests {
     async fn invalid_json_returns_parse_error() {
         let (_registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text("not a json".to_owned().into()))
+        ws.send(WsMessage::Text("not a json".to_owned()))
             .await
             .unwrap();
         let resp = next_text(&mut ws).await;
@@ -924,11 +1030,9 @@ mod tests {
     async fn session_bye_removes_record() {
         let (registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-b", "client", "x").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-b", "client", "x")))
+            .await
+            .unwrap();
         let _ = next_text(&mut ws).await;
         assert_eq!(registry.len(), 1);
 
@@ -937,9 +1041,7 @@ mod tests {
             method: methods::SESSION_BYE.to_owned(),
             params: json!({}),
         };
-        ws.send(WsMessage::Text(bye.to_text().into()))
-            .await
-            .unwrap();
+        ws.send(WsMessage::Text(bye.to_text())).await.unwrap();
         let _ = next_text(&mut ws).await;
 
         // дать серверу обработать close
@@ -960,11 +1062,9 @@ mod tests {
     async fn tools_changed_updates_registry() {
         let (registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-t", "client", "old").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-t", "client", "old")))
+            .await
+            .unwrap();
         let _ = next_text(&mut ws).await;
 
         let notif = WireMessage::Notification {
@@ -976,9 +1076,7 @@ mod tests {
                 ]
             }),
         };
-        ws.send(WsMessage::Text(notif.to_text().into()))
-            .await
-            .unwrap();
+        ws.send(WsMessage::Text(notif.to_text())).await.unwrap();
 
         // дать серверу обработать
         for _ in 0..50 {
@@ -1002,11 +1100,9 @@ mod tests {
     async fn outbound_tool_call_round_trips_through_websocket() {
         let (registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-out", "client", "echo").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-out", "client", "echo")))
+            .await
+            .unwrap();
         let _ = next_text(&mut ws).await; // register ack
 
         // Достаём ConnectionHandle из реестра.
@@ -1042,9 +1138,7 @@ mod tests {
             id,
             result: Ok(json!({"ok": true})),
         };
-        ws.send(WsMessage::Text(response.to_text().into()))
-            .await
-            .unwrap();
+        ws.send(WsMessage::Text(response.to_text())).await.unwrap();
 
         let result = outbound_task.await.unwrap().expect("call ok");
         assert_eq!(result, json!({"ok": true}));
@@ -1058,11 +1152,9 @@ mod tests {
     async fn outbound_pending_drains_on_disconnect() {
         let (registry, running, url) = boot().await;
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-drop", "client", "x").into(),
-        ))
-        .await
-        .unwrap();
+        ws.send(WsMessage::Text(register_text("uid-drop", "client", "x")))
+            .await
+            .unwrap();
         let _ = next_text(&mut ws).await;
 
         let conn = registry
@@ -1120,9 +1212,11 @@ mod tests {
         let (registry, running, url) = boot_with(config).await;
 
         let mut ws = connect(&url).await;
-        ws.send(WsMessage::Text(
-            register_text("uid-keepalive", "client", "x").into(),
-        ))
+        ws.send(WsMessage::Text(register_text(
+            "uid-keepalive",
+            "client",
+            "x",
+        )))
         .await
         .unwrap();
         let _ = next_text(&mut ws).await;
@@ -1160,11 +1254,9 @@ mod tests {
 
         let ws = connect(&url).await;
         let (mut sink, mut stream) = ws.split();
-        sink.send(WsMessage::Text(
-            register_text("uid-alive", "client", "x").into(),
-        ))
-        .await
-        .unwrap();
+        sink.send(WsMessage::Text(register_text("uid-alive", "client", "x")))
+            .await
+            .unwrap();
 
         // Pump фоновой task'ой: читаем фреймы (auto-Pong на Ping), забываем результат.
         let pump = tokio::spawn(async move {

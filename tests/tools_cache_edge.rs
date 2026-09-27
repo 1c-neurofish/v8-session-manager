@@ -25,6 +25,7 @@ fn td(name: &str) -> ToolDescriptor {
         name: name.to_owned(),
         description: Some(format!("desc for {name}")),
         input_schema: json!({"type": "object"}),
+        visibility: Default::default(),
     }
 }
 
@@ -42,6 +43,8 @@ fn register_params(uid: &str, kind: &str, tools: Vec<ToolDescriptor>) -> Session
         resources: None,
         prompts: None,
         extras: None,
+        cluster_server: None,
+        database_key: None,
     }
 }
 
@@ -50,6 +53,7 @@ fn app_config(work_path: PathBuf) -> Arc<AppConfig> {
         work_path,
         mcp: McpConfig::default(),
         tools_cache: ToolsCacheConfig::default(),
+        masking: Default::default(),
     })
 }
 

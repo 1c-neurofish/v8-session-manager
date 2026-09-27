@@ -305,6 +305,7 @@ mod tests {
             name: name.to_owned(),
             description: None,
             input_schema: json!({"type": "object"}),
+            visibility: Default::default(),
         }
     }
 

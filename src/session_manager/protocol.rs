@@ -53,6 +53,7 @@ pub mod error_codes {
     pub const CLIENT_TIMEOUT: i64 = -32012;
     pub const SPAWN_TIMEOUT: i64 = -32013;
     pub const KIND_MISMATCH: i64 = -32014;
+    pub const SESSION_REGISTRATION_UNAUTHENTICATED: i64 = -32015;
     pub const TOOL_CANCELLED: i64 = -32800;
     pub const INVALID_REQUEST: i64 = -32600;
     pub const METHOD_NOT_FOUND: i64 = -32601;
@@ -230,6 +231,23 @@ pub struct ToolDescriptor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub input_schema: Value,
+    /// `internal` tools остаются в registry, но никогда не публикуются агенту.
+    #[serde(default, skip_serializing_if = "ToolVisibility::is_public")]
+    pub visibility: ToolVisibility,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolVisibility {
+    #[default]
+    Public,
+    Internal,
+}
+
+impl ToolVisibility {
+    pub fn is_public(&self) -> bool {
+        matches!(self, Self::Public)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -262,6 +280,19 @@ pub struct SessionRegisterParams {
     pub prompts: Option<Vec<Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extras: Option<Value>,
+    //++agent TASK-225 [26.09.2026] N: идентичность базы по координатам кластера.
+    /// `Srvr` из `СтрокаСоединенияИнформационнойБазы()` (передаётся ключом `cluster_server`;
+    /// может быть списком хостов). Файловые базы поля не имеют — их
+    /// сессии остаются без проверенной identity (DATABASE_IDENTITY_UNVERIFIED
+    /// на входе в masking-gate).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cluster_server: Option<String>,
+    /// Непрозрачный ключ базы `ras:<c>:<i>`/`gen:<srvr>/<ref>`,
+    /// вычисляемый менеджером после RAS-резолюции. Не принимается с
+    /// провода (`skip`): менеджер не доверяет идентификаторам адаптера.
+    #[serde(skip)]
+    pub database_key: Option<String>,
+    //++agent TASK-225
 }
 
 fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -517,6 +548,7 @@ mod tests {
                 name: "echo".to_owned(),
                 description: None,
                 input_schema: json!({ "type": "object" }),
+                visibility: Default::default(),
             }],
             config_id: None,
             host_id: None,
@@ -524,6 +556,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         };
         let request = WireMessage::Request {
             id: Id::String("r1".to_owned()),

@@ -27,6 +27,29 @@ pub enum ConfigValidationError {
 
     #[error("tools_cache.cache_life_period must be >= 1s (got {0:?})")]
     ToolsCacheLifePeriodTooSmall(Duration),
+
+    #[error("masking.socket_path must be an absolute non-empty path")]
+    InvalidMaskingSocketPath,
+
+    #[error("masking.internal_listen_path must be an absolute non-empty path")]
+    InvalidMaskingInternalListenPath,
+
+    #[error("masking.{0} must be greater than zero")]
+    InvalidMaskingTimeout(&'static str),
+
+    #[error("masking.internal_tools must contain unique non-empty names")]
+    InvalidInternalTools,
+
+    #[error("masking.service_expected_uid is required when masking is enabled")]
+    MissingServiceExpectedUid,
+
+    //++agent TASK-225 [26.09.2026] N: `identity_bindings` и YAML-настройки
+    // RAS удалены — маршрут по (GUID кластера, GUID ИБ), RAS-резолюция
+    // конфигурируется env (см. masking::ras), пустой/отсутствующий RAS —
+    // штатный режим, не ошибка валидации.
+    //++agent TASK-225
+    #[error("masking broker verification settings are invalid")]
+    InvalidMaskingBrokerSettings,
 }
 
 pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
@@ -71,6 +94,66 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
         ));
     }
 
+    if config.masking.enabled {
+        if config.masking.socket_path.as_os_str().is_empty()
+            || !config.masking.socket_path.is_absolute()
+        {
+            return Err(ConfigValidationError::InvalidMaskingSocketPath);
+        }
+        if config.masking.internal_listen_path.as_os_str().is_empty()
+            || !config.masking.internal_listen_path.is_absolute()
+        {
+            return Err(ConfigValidationError::InvalidMaskingInternalListenPath);
+        }
+        if config.masking.preflight_timeout_ms == 0 {
+            return Err(ConfigValidationError::InvalidMaskingTimeout(
+                "preflight_timeout_ms",
+            ));
+        }
+        if config.masking.finalize_timeout_ms == 0 {
+            return Err(ConfigValidationError::InvalidMaskingTimeout(
+                "finalize_timeout_ms",
+            ));
+        }
+        if config.masking.internal_call_timeout_ms == 0 {
+            return Err(ConfigValidationError::InvalidMaskingTimeout(
+                "internal_call_timeout_ms",
+            ));
+        }
+        //++agent TASK-225 [25.09.2026]
+        // managed_tools устарел: при enabled=true через gate идут ВСЕ
+        // публичные proxy-вызовы, список не влияет на маршрут и не
+        // валидируется (старое требование ровно шести имён удалено).
+        //++agent TASK-225
+        let mut internal_tools = std::collections::HashSet::new();
+        if config.masking.internal_tools.is_empty()
+            || config
+                .masking
+                .internal_tools
+                .iter()
+                .any(|name| name.is_empty() || !internal_tools.insert(name))
+        {
+            return Err(ConfigValidationError::InvalidInternalTools);
+        }
+        if config.masking.service_expected_uid.is_none() {
+            return Err(ConfigValidationError::MissingServiceExpectedUid);
+        }
+        if !config.masking.broker_public_key_path.is_absolute()
+            || config.masking.broker_issuer.is_empty()
+            || config.masking.broker_audience != "v8-session-manager"
+            || config.masking.broker_max_assertion_ttl_secs == 0
+            || config.masking.broker_max_assertion_ttl_secs > 300
+            || config.masking.conversation_assertion_header.is_empty()
+            || config
+                .masking
+                .conversation_assertion_header
+                .parse::<axum::http::HeaderName>()
+                .is_err()
+        {
+            return Err(ConfigValidationError::InvalidMaskingBrokerSettings);
+        }
+    }
+
     Ok(())
 }
 
@@ -85,6 +168,7 @@ mod tests {
             work_path: PathBuf::from("/tmp/v8sm-test"),
             mcp: McpConfig::default(),
             tools_cache: ToolsCacheConfig::default(),
+            masking: crate::config::model::MaskingConfig::default(),
         }
     }
 
@@ -120,6 +204,25 @@ mod tests {
         let mut cfg = base_config();
         cfg.tools_cache.enabled = false;
         cfg.tools_cache.cache_life_period = Duration::from_millis(0);
+        assert!(validate(&cfg).is_ok());
+    }
+
+    #[test]
+    fn masking_enabled_requires_service_uid() {
+        let mut cfg = base_config();
+        cfg.masking.enabled = true;
+        cfg.masking.socket_path = PathBuf::from("/run/mask.sock");
+        cfg.masking.internal_listen_path = PathBuf::from("/run/mask-manager.sock");
+        cfg.masking.broker_public_key_path = PathBuf::from("/etc/manager/broker.pub.pem");
+        // TASK-225/N: identity_bindings удалены — маршрут по координатам
+        // кластера (cluster_server + RAS-резолвленные GUID-ы), YAML-привязок
+        // и RAS-конфига больше нет: RAS задаётся env и опционален.
+        assert!(matches!(
+            validate(&cfg),
+            Err(ConfigValidationError::MissingServiceExpectedUid)
+        ));
+
+        cfg.masking.service_expected_uid = Some(994);
         assert!(validate(&cfg).is_ok());
     }
 }

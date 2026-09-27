@@ -2,7 +2,7 @@
 //!
 //! Принимает входящие WebSocket‑соединения от 1С‑клиентов с расширением
 //! `web-transport-addin`, ведёт реестр активных сессий и проксирует MCP
-//! `tool.call` от AI‑агента в нужную сессию через `ProxyRouter`.
+//! `tool.call` от AI‑агента в явно выбранную сессию.
 //!
 //! После урезания (#5/post-extraction) менеджер выполняет ТОЛЬКО роль агрегатора
 //! и точки доступа к проксированным tool'ам клиентов:
@@ -14,6 +14,7 @@ pub mod dispatcher;
 pub mod env_carrier;
 pub mod lifecycle;
 pub mod management;
+pub mod masking;
 pub mod metrics;
 pub mod notify;
 pub mod protocol;

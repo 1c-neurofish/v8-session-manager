@@ -139,6 +139,7 @@ mod tests {
                 name: tool.to_owned(),
                 description: None,
                 input_schema: json!({}),
+                visibility: Default::default(),
             }],
             config_id: None,
             host_id: None,
@@ -146,6 +147,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         }
     }
 

@@ -89,7 +89,9 @@ fn apply_cli_overrides(config: &mut crate::config::model::AppConfig, cli: &Cli) 
 }
 
 fn install_panic_hook() {
-    std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("{panic_info}");
+    std::panic::set_hook(Box::new(|_| {
+        // Panic payload может содержать tool arguments/result; публичный log
+        // получает только фиксированный код без raw diagnostic text.
+        eprintln!("v8-session-manager: fatal internal error");
     }));
 }

@@ -1,23 +1,22 @@
 //! ClientProxy router (ADR‑0025, naming v2 от 2026-05-09).
 //!
-//! Динамически вычисляет публикуемые tool'ы из `SessionRegistry`. После
-//! правки от 2026-05-09 публикуется голое имя `tool_name` без префикса
-//! `<kind>__`. Дедупликация выполняется только по `tool_name` + `schema_hash`;
-//! `kind` больше не входит в ключ группы.
-//!
-//! Pure функции: всё состояние (round‑robin счётчики) живёт в [`ProxyRouter`],
-//! который держит `McpToolServer`. Без зависимости от rmcp internals: возвращает
-//! `Vec<rmcp::model::Tool>` и принимает `arguments: JsonObject`.
+//! Динамически вычисляет публикуемые tool'ы из `SessionRegistry`. Публикуется
+//! голое имя `tool_name`; конкретная сессия выбирается зарезервированным
+//! аргументом [`SESSION_ID_ARGUMENT`]. Если активный кандидат один, аргумент
+//! остаётся опциональным для обратной совместимости.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rmcp::model::Tool;
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::session_manager::registry::{SessionRegistry, SessionState};
+
+/// Зарезервированный менеджером аргумент маршрутизации. Он публикуется в
+/// `inputSchema`, но удаляется до отправки аргументов выбранной WS-сессии.
+pub const SESSION_ID_ARGUMENT: &str = "session_id";
 
 /// SHA‑256 от канонически отсортированного `input_schema`. Возвращает hex‑строку.
 pub fn schema_hash(schema: &Value) -> String {
@@ -56,27 +55,16 @@ pub struct ProxySlot {
     pub schema_hash: String,
     pub description: Option<String>,
     pub input_schema: Value,
-    /// Список `session_id`, удовлетворяющих `(tool_name, schema_hash)`,
-    /// в стабильной (отсортированной по uid) последовательности — для
-    /// предсказуемости round‑robin'а.
+    /// Список активных `session_id`, публикующих `tool_name`, в стабильной
+    /// (отсортированной по uid) последовательности.
     pub session_ids: Vec<String>,
 }
 
 /// Результат группировки реестра по `tool_name`.
 #[derive(Debug, Default)]
 pub struct ProxyView {
-    /// Опубликованные slots — ровно один schema_hash в группе `tool_name`.
+    /// По одному опубликованному slot на каждое уникальное имя tool.
     pub published: Vec<ProxySlot>,
-    /// Скрытые из `tools/list` группы (конфликт schema). Доступны через `session.call`.
-    pub hidden: Vec<HiddenGroup>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HiddenGroup {
-    pub tool_name: String,
-    pub schema_hashes: Vec<String>,
-    pub session_ids: Vec<String>,
-    pub kinds: Vec<String>,
 }
 
 /// Группирует Active‑записи реестра в slots ClientProxy.
@@ -90,6 +78,9 @@ pub fn build_proxy_view(registry: &SessionRegistry) -> ProxyView {
             continue;
         }
         for tool in &rec.tools {
+            if !tool.visibility.is_public() {
+                continue;
+            }
             let h = schema_hash(&tool.input_schema);
             let group = groups.entry(tool.name.clone()).or_default();
             let acc = group.entry(h.clone()).or_insert_with(|| GroupAccumulator {
@@ -107,46 +98,118 @@ pub fn build_proxy_view(registry: &SessionRegistry) -> ProxyView {
 
     let mut view = ProxyView::default();
     for (tool_name, buckets) in groups {
-        if buckets.len() == 1 {
-            let (h, mut acc) = buckets.into_iter().next().unwrap();
-            acc.session_ids.sort();
-            acc.kinds.sort();
-            view.published.push(ProxySlot {
-                published_name: tool_name.clone(),
-                kinds: acc.kinds,
-                tool_name,
-                schema_hash: h,
-                description: acc.description,
-                input_schema: acc.input_schema,
-                session_ids: acc.session_ids,
-            });
-        } else {
-            let mut hashes: Vec<String> = buckets.keys().cloned().collect();
-            hashes.sort();
-            let mut session_ids: Vec<String> = Vec::new();
-            let mut kinds: Vec<String> = Vec::new();
-            for acc in buckets.into_values() {
-                session_ids.extend(acc.session_ids);
-                for k in acc.kinds {
-                    if !kinds.contains(&k) {
-                        kinds.push(k);
-                    }
+        let mut variants: Vec<(String, GroupAccumulator)> = buckets.into_iter().collect();
+        variants.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut session_ids = Vec::new();
+        let mut kinds = Vec::new();
+        for (_, acc) in &variants {
+            session_ids.extend(acc.session_ids.iter().cloned());
+            for kind in &acc.kinds {
+                if !kinds.contains(kind) {
+                    kinds.push(kind.clone());
                 }
             }
-            session_ids.sort();
-            kinds.sort();
-            view.hidden.push(HiddenGroup {
-                tool_name,
-                schema_hashes: hashes,
-                session_ids,
-                kinds,
-            });
         }
+        session_ids.sort();
+        kinds.sort();
+        let require_session_id = session_ids.len() > 1;
+        let input_schema = if variants.len() == 1 {
+            let (_, acc) = &variants[0];
+            input_schema_with_session_selector(&acc.input_schema, &session_ids, require_session_id)
+        } else {
+            let one_of = variants
+                .iter()
+                .map(|(_, acc)| {
+                    let mut variant_ids = acc.session_ids.clone();
+                    variant_ids.sort();
+                    input_schema_with_session_selector(&acc.input_schema, &variant_ids, true)
+                })
+                .collect::<Vec<_>>();
+            serde_json::json!({"type": "object", "oneOf": one_of})
+        };
+        let (schema_hash, description) = if variants.len() == 1 {
+            (variants[0].0.clone(), variants[0].1.description.clone())
+        } else {
+            (
+                schema_hash(&input_schema),
+                Some(format!(
+                    "ClientProxy tool with session-specific schemas; select one of: {}",
+                    session_ids.join(", ")
+                )),
+            )
+        };
+        view.published.push(ProxySlot {
+            published_name: tool_name.clone(),
+            kinds,
+            tool_name,
+            schema_hash,
+            description,
+            input_schema,
+            session_ids,
+        });
     }
     view.published
         .sort_by(|a, b| a.published_name.cmp(&b.published_name));
-    view.hidden.sort_by(|a, b| a.tool_name.cmp(&b.tool_name));
     view
+}
+
+/// Добавляет в клиентскую схему фактически принимаемый менеджером селектор.
+/// Для нескольких кандидатов селектор обязателен; для единственного — только
+/// документирует допустимый идентификатор, сохраняя старые вызовы без него.
+pub fn input_schema_with_session_selector(
+    schema: &Value,
+    session_ids: &[String],
+    required: bool,
+) -> Value {
+    let mut object = schema.as_object().cloned().unwrap_or_default();
+    object
+        .entry("type".to_owned())
+        .or_insert_with(|| Value::String("object".to_owned()));
+
+    let properties = object
+        .entry("properties".to_owned())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if !properties.is_object() {
+        *properties = Value::Object(serde_json::Map::new());
+    }
+    let mut selector = serde_json::Map::new();
+    selector.insert("type".to_owned(), Value::String("string".to_owned()));
+    selector.insert(
+        "description".to_owned(),
+        Value::String(
+            "Session-manager routing selector; removed before forwarding to the target tool"
+                .to_owned(),
+        ),
+    );
+    if !session_ids.is_empty() {
+        selector.insert(
+            "enum".to_owned(),
+            Value::Array(session_ids.iter().cloned().map(Value::String).collect()),
+        );
+    }
+    properties
+        .as_object_mut()
+        .expect("properties normalized to object")
+        .insert(SESSION_ID_ARGUMENT.to_owned(), Value::Object(selector));
+
+    if required {
+        let required_values = object
+            .entry("required".to_owned())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if !required_values.is_array() {
+            *required_values = Value::Array(Vec::new());
+        }
+        let required_array = required_values
+            .as_array_mut()
+            .expect("required normalized to array");
+        if !required_array
+            .iter()
+            .any(|value| value.as_str() == Some(SESSION_ID_ARGUMENT))
+        {
+            required_array.push(Value::String(SESSION_ID_ARGUMENT.to_owned()));
+        }
+    }
+    Value::Object(object)
 }
 
 #[derive(Debug)]
@@ -178,56 +241,39 @@ pub fn proxy_tools(view: &ProxyView) -> Vec<Tool> {
         .collect()
 }
 
-/// Round‑robin счётчик per‑group `tool_name`.
-#[derive(Debug, Default)]
-pub struct ProxyRouter {
-    counters: Mutex<HashMap<String, AtomicUsize>>,
-}
-
-impl ProxyRouter {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Выбирает session_id из равнозначных. Round‑robin по группе `tool_name`.
-    /// `session_ids` должен быть непустым, отсортированным.
-    pub fn pick(&self, tool_name: &str, session_ids: &[String]) -> Option<String> {
-        if session_ids.is_empty() {
-            return None;
-        }
-        let mut guard = self.counters.lock().expect("counters poisoned");
-        let counter = guard
-            .entry(tool_name.to_owned())
-            .or_insert_with(|| AtomicUsize::new(0));
-        let n = counter.fetch_add(1, Ordering::Relaxed);
-        Some(session_ids[n % session_ids.len()].clone())
-    }
-}
-
 /// Резолвит `(name, args)` от MCP в выбор сессии + данные для `tool.call`.
 ///
-/// * Если в view есть published slot с `published_name == name`, возвращается
-///   round‑robin сессия из его `session_ids`.
-/// * Если такого slot нет, но есть hidden‑группа с тем же `tool_name`, —
-///   `Err(ResolveError::SchemaConflict)`.
+/// * Явный `session_id` обязан быть кандидатом именно для этого tool.
+/// * Без `session_id` единственный кандидат выбирается автоматически.
+/// * Без `session_id` несколько кандидатов дают ошибку неоднозначности.
 /// * Иначе — `Err(ResolveError::NotProxyTool)` (caller делегирует server‑router).
 pub fn resolve_published(
     name: &str,
     view: &ProxyView,
-    router: &ProxyRouter,
+    requested_session_id: Option<&str>,
 ) -> Result<ResolvedCall, ResolveError> {
     if let Some(slot) = view.published.iter().find(|s| s.published_name == name) {
-        let session = router
-            .pick(&slot.tool_name, &slot.session_ids)
-            .ok_or(ResolveError::NoActiveSessions)?;
+        let session = match requested_session_id {
+            Some(session_id) if slot.session_ids.iter().any(|id| id == session_id) => {
+                session_id.to_owned()
+            }
+            Some(session_id) => {
+                return Err(ResolveError::SessionToolMismatch {
+                    tool_name: slot.tool_name.clone(),
+                    session_id: session_id.to_owned(),
+                });
+            }
+            None if slot.session_ids.len() == 1 => slot.session_ids[0].clone(),
+            None => {
+                return Err(ResolveError::SessionRequired {
+                    tool_name: slot.tool_name.clone(),
+                    session_ids: slot.session_ids.clone(),
+                });
+            }
+        };
         return Ok(ResolvedCall {
             session_id: session,
             tool_name: slot.tool_name.clone(),
-        });
-    }
-    if let Some(hidden) = view.hidden.iter().find(|h| h.tool_name == name) {
-        return Err(ResolveError::SchemaConflict {
-            tool_name: hidden.tool_name.clone(),
         });
     }
     Err(ResolveError::NotProxyTool)
@@ -243,18 +289,16 @@ pub struct ResolvedCall {
 pub enum ResolveError {
     #[error("not a client-proxy tool name")]
     NotProxyTool,
-    #[error("no active sessions for the requested tool")]
-    NoActiveSessions,
-    #[error("schema conflict: {tool_name:?} hidden from tools/list — use session.call")]
-    SchemaConflict { tool_name: String },
-}
-
-/// Хелпер: канонический JSON‑object для `arguments` в `tool.call`.
-pub fn arguments_to_value(arguments: Option<rmcp::model::JsonObject>) -> Value {
-    match arguments {
-        Some(map) => Value::Object(map),
-        None => json!({}),
-    }
+    #[error("session_id is required for tool {tool_name:?}; candidates: {session_ids:?}")]
+    SessionRequired {
+        tool_name: String,
+        session_ids: Vec<String>,
+    },
+    #[error("session {session_id:?} does not publish tool {tool_name:?}")]
+    SessionToolMismatch {
+        tool_name: String,
+        session_id: String,
+    },
 }
 
 #[cfg(test)]
@@ -277,6 +321,7 @@ mod tests {
                     name: n.to_owned(),
                     description: None,
                     input_schema: schema,
+                    visibility: Default::default(),
                 })
                 .collect(),
             config_id: None,
@@ -285,6 +330,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         }
     }
 
@@ -308,39 +355,56 @@ mod tests {
         .unwrap();
         let view = build_proxy_view(&reg);
         assert_eq!(view.published.len(), 1);
-        assert_eq!(view.hidden.len(), 0);
         // Голое имя — без префикса `<kind>__`.
         assert_eq!(view.published[0].published_name, "echo");
         assert_eq!(view.published[0].tool_name, "echo");
         assert_eq!(view.published[0].session_ids, vec!["uid-1".to_owned()]);
+        assert_eq!(
+            view.published[0].input_schema["properties"][SESSION_ID_ARGUMENT]["enum"],
+            json!(["uid-1"])
+        );
+        assert!(view.published[0].input_schema.get("required").is_none());
     }
 
     #[test]
-    fn round_robin_distributes_across_equal_schema_sessions() {
+    fn multiple_equal_schema_sessions_require_explicit_selection() {
         let reg = SessionRegistry::new();
         reg.register(
-            params("uid-1", "client", vec![("echo", json!({"type": "object"}))]),
+            params("prod", "client", vec![("echo", json!({"type": "object"}))]),
             Instant::now(),
             None,
         )
         .unwrap();
         reg.register(
-            params("uid-2", "client", vec![("echo", json!({"type": "object"}))]),
+            params("dev", "client", vec![("echo", json!({"type": "object"}))]),
             Instant::now(),
             None,
         )
         .unwrap();
         let view = build_proxy_view(&reg);
         assert_eq!(view.published.len(), 1);
-        assert_eq!(view.published[0].session_ids, vec!["uid-1", "uid-2"]);
+        assert_eq!(view.published[0].session_ids, vec!["dev", "prod"]);
+        assert_eq!(
+            view.published[0].input_schema["required"],
+            json!([SESSION_ID_ARGUMENT])
+        );
 
-        let router = ProxyRouter::new();
-        let r1 = resolve_published("echo", &view, &router).unwrap();
-        let r2 = resolve_published("echo", &view, &router).unwrap();
-        let r3 = resolve_published("echo", &view, &router).unwrap();
-        assert_eq!(r1.session_id, "uid-1");
-        assert_eq!(r2.session_id, "uid-2");
-        assert_eq!(r3.session_id, "uid-1"); // round-robin wraps
+        assert!(matches!(
+            resolve_published("echo", &view, None),
+            Err(ResolveError::SessionRequired { .. })
+        ));
+        assert_eq!(
+            resolve_published("echo", &view, Some("dev"))
+                .unwrap()
+                .session_id,
+            "dev"
+        );
+        assert_eq!(
+            resolve_published("echo", &view, Some("prod"))
+                .unwrap()
+                .session_id,
+            "prod"
+        );
     }
 
     #[test]
@@ -366,7 +430,6 @@ mod tests {
         .unwrap();
         let view = build_proxy_view(&reg);
         assert_eq!(view.published.len(), 1, "single published slot expected");
-        assert_eq!(view.hidden.len(), 0);
         let slot = &view.published[0];
         assert_eq!(slot.published_name, "echo");
         assert_eq!(slot.session_ids, vec!["uid-1", "uid-2"]);
@@ -374,52 +437,96 @@ mod tests {
     }
 
     #[test]
-    fn conflict_schema_hides_tool_from_list() {
+    fn conflicting_schemas_are_published_as_session_specific_one_of() {
         let reg = SessionRegistry::new();
         reg.register(
-            params("uid-1", "client", vec![("echo", json!({"type": "object"}))]),
+            params(
+                "prod",
+                "client",
+                vec![(
+                    "echo",
+                    json!({"type": "object", "properties": {"prod_arg": {"type": "string"}}}),
+                )],
+            ),
             Instant::now(),
             None,
         )
         .unwrap();
         reg.register(
-            params("uid-2", "client", vec![("echo", json!({"type": "string"}))]),
+            params(
+                "dev",
+                "client",
+                vec![(
+                    "echo",
+                    json!({"type": "object", "properties": {"dev_arg": {"type": "integer"}}}),
+                )],
+            ),
             Instant::now(),
             None,
         )
         .unwrap();
         let view = build_proxy_view(&reg);
-        assert_eq!(view.published.len(), 0);
-        assert_eq!(view.hidden.len(), 1);
-        let h = &view.hidden[0];
-        assert_eq!(h.tool_name, "echo");
-        assert_eq!(h.schema_hashes.len(), 2);
+        assert_eq!(view.published.len(), 1);
+        let slot = &view.published[0];
+        assert_eq!(slot.tool_name, "echo");
+        assert_eq!(slot.input_schema["type"], "object");
+        let variants = slot.input_schema["oneOf"].as_array().unwrap();
+        assert_eq!(variants.len(), 2);
+        assert!(variants.iter().all(|variant| {
+            variant["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == SESSION_ID_ARGUMENT)
+        }));
+        let mut selectors = variants
+            .iter()
+            .map(|variant| {
+                variant["properties"][SESSION_ID_ARGUMENT]["enum"][0]
+                    .as_str()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        selectors.sort();
+        assert_eq!(selectors, vec!["dev", "prod"]);
+        assert_eq!(
+            resolve_published("echo", &view, Some("prod"))
+                .unwrap()
+                .session_id,
+            "prod"
+        );
+        assert_eq!(
+            resolve_published("echo", &view, Some("dev"))
+                .unwrap()
+                .session_id,
+            "dev"
+        );
     }
 
     #[test]
-    fn resolve_returns_schema_conflict_for_hidden() {
+    fn explicit_session_must_publish_requested_tool() {
         let reg = SessionRegistry::new();
         reg.register(
-            params("uid-1", "client", vec![("echo", json!({"a": 1}))]),
+            params("prod", "client", vec![("echo", json!({"type": "object"}))]),
             Instant::now(),
             None,
         )
         .unwrap();
         reg.register(
-            params("uid-2", "client", vec![("echo", json!({"a": 2}))]),
+            params("dev", "client", vec![("other", json!({"type": "object"}))]),
             Instant::now(),
             None,
         )
         .unwrap();
         let view = build_proxy_view(&reg);
-        let router = ProxyRouter::new();
-        let err = resolve_published("echo", &view, &router).unwrap_err();
-        match err {
-            ResolveError::SchemaConflict { tool_name } => {
-                assert_eq!(tool_name, "echo");
+        let err = resolve_published("echo", &view, Some("dev")).unwrap_err();
+        assert_eq!(
+            err,
+            ResolveError::SessionToolMismatch {
+                tool_name: "echo".to_owned(),
+                session_id: "dev".to_owned(),
             }
-            other => panic!("unexpected: {other:?}"),
-        }
+        );
     }
 
     #[test]
@@ -432,8 +539,29 @@ mod tests {
         )
         .unwrap();
         let view = build_proxy_view(&reg);
-        let router = ProxyRouter::new();
-        let err = resolve_published("nope", &view, &router).unwrap_err();
+        let err = resolve_published("nope", &view, None).unwrap_err();
         assert!(matches!(err, ResolveError::NotProxyTool));
+    }
+
+    #[test]
+    fn internal_tools_are_absent_from_agent_view_and_resolver() {
+        let registry = SessionRegistry::new();
+        let mut registration = params(
+            "uid-internal",
+            "server",
+            vec![("mcp_internal_feed", json!({"type": "object"}))],
+        );
+        registration.tools[0].visibility =
+            crate::session_manager::protocol::ToolVisibility::Internal;
+        registry
+            .register(registration, Instant::now(), None)
+            .unwrap();
+
+        let view = build_proxy_view(&registry);
+        assert!(proxy_tools(&view).is_empty());
+        assert_eq!(
+            resolve_published("mcp_internal_feed", &view, Some("uid-internal")),
+            Err(ResolveError::NotProxyTool)
+        );
     }
 }

@@ -23,6 +23,90 @@ pub struct AppConfig {
     /// `notifications/tools/list_changed` (например Claude Code).
     #[serde(default)]
     pub tools_cache: ToolsCacheConfig,
+
+    /// Fail-closed gate внешнего сервиса маскирования MCP-результатов.
+    #[serde(default)]
+    pub masking: MaskingConfig,
+}
+
+/// Конфигурация внутреннего UDS-клиента сервиса маскирования.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default, rename_all = "snake_case")]
+pub struct MaskingConfig {
+    /// Gate активируется только явно; без полной identity-конфигурации запуск
+    /// с `enabled=true` отклоняется валидатором.
+    pub enabled: bool,
+    /// UDS сервиса маскирования (manager → service: preflight/finalize/terminal).
+    pub socket_path: PathBuf,
+    /// UDS-listener менеджера для внутренних вызовов сервиса
+    /// (service → manager: `POST /internal/v1/tools/call`). Тот же
+    /// shared-volume, что и `socket_path`; доступ ограничен peer UID
+    /// `service_expected_uid`.
+    pub internal_listen_path: PathBuf,
+    pub preflight_timeout_ms: u64,
+    pub finalize_timeout_ms: u64,
+    /// Дедлайн одного internal tool.call (например, страница словаря)
+    /// на стороне менеджера.
+    pub internal_call_timeout_ms: u64,
+    /// PEM public key доверенного broker-а для проверки JWT/JWS assertion.
+    pub broker_public_key_path: PathBuf,
+    pub broker_issuer: String,
+    pub broker_audience: String,
+    pub broker_max_assertion_ttl_secs: u64,
+    pub conversation_assertion_header: String,
+    //++agent TASK-225 [25.09.2026]
+    /// УСТАРЕВШЕЕ: при `masking.enabled=true` ВСЕ публичные proxy-вызовы
+    /// проходят через сервис маскирования — список больше не влияет на
+    /// маршрут (решение пользователя: единая точка контроля, исключения
+    /// настраиваются классификацией в админке сервиса, а не конфигом MCP).
+    /// Поле оставлено для совместимости десериализации старых конфигов;
+    /// непустое значение — предупреждение в логе при старте gate.
+    //++agent TASK-225
+    pub managed_tools: Vec<String>,
+    /// Имена внутренних tools mcp_tools. Не публикуются агенту в tools/list,
+    /// вызов агентом отклоняется; вызываются только сервисом маскирования
+    /// через `internal_listen_path`. Менеджер помечает их `Internal` по имени
+    /// из этого списка (источник — конфиг, а не payload регистрации 1С).
+    pub internal_tools: Vec<String>,
+    /// Ожидаемый UID сервиса маскирования на `internal_listen_path`;
+    /// обязателен при `enabled=true`.
+    pub service_expected_uid: Option<u32>,
+    //++agent TASK-225 [26.09.2026] N: `identity_bindings` (имя сессии →
+    // database_id сервиса) удалено из модели — идентичность базы
+    // детерминированно определяется парой (GUID кластера, GUID ИБ),
+    // которую менеджер резолвит через RAS по `cluster_server`+
+    // `infobase_name` из `session.register`. Настройки RAS — только в env
+    // (`V8SM_RAC_PATH`/`V8SM_RAS_ADDRESS`/`V8SM_RAS_CLUSTER_USER`/
+    // `V8SM_RAS_CLUSTER_PASSWORD`), см. masking::ras.
+    //++agent TASK-225
+}
+
+impl Default for MaskingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            socket_path: PathBuf::from("/run/1c-masking/internal.sock"),
+            internal_listen_path: PathBuf::from("/run/1c-masking/manager.sock"),
+            preflight_timeout_ms: 3_000,
+            finalize_timeout_ms: 15_000,
+            internal_call_timeout_ms: 10_000,
+            broker_public_key_path: PathBuf::from("/etc/v8-session-manager/broker-ed25519.pub.pem"),
+            broker_issuer: "trusted-mcp-broker".to_owned(),
+            broker_audience: "v8-session-manager".to_owned(),
+            broker_max_assertion_ttl_secs: 300,
+            conversation_assertion_header: "x-v8-conversation-assertion".to_owned(),
+            //++agent TASK-225 [25.09.2026]
+            // Устаревшее поле: пустой default, чтобы отсутствие ключа в
+            // конфиге не порождало ложное deprecation-предупреждение.
+            //++agent TASK-225
+            managed_tools: Vec::new(),
+            internal_tools: vec![
+                "mcp_internal_masking_metadata_feed".to_owned(),
+                "mcp_internal_masking_dictionary_feed".to_owned(),
+            ],
+            service_expected_uid: None,
+        }
+    }
 }
 
 /// MCP runtime configuration.

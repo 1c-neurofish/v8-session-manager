@@ -60,6 +60,17 @@ pub struct SessionRecord {
     /// Обновляется при soft reconnect — фактический номер в новом сеансе
     /// 1С может отличаться от номера предыдущего сеанса.
     pub ib_session_number: u32,
+    //++agent TASK-225 [26.09.2026] O2: идентичность базы — точный ключ.
+    /// `database_key` = `ras:<cluster_guid>:<infobase_guid>` либо
+    /// `gen:<srvr>/<ref>` verbatim — вычисляется менеджером при
+    /// регистрации через RAS (см. `masking::ras`); `cluster_server` —
+    /// исходный `Srvr` для отображения. `None` для файловых баз:
+    /// сессия без `cluster_server` не проходит masking-gate
+    /// (DATABASE_IDENTITY_UNVERIFIED). Поля обновляются при soft
+    /// reconnect (переезды ИБ не ломают маршрут).
+    pub cluster_server: Option<String>,
+    pub database_key: Option<String>,
+    //++agent TASK-225
     pub tools: Vec<ToolDescriptor>,
     pub state: SessionState,
     /// Идентификатор хоста, на котором работает процесс. Берётся из поля
@@ -195,6 +206,18 @@ impl SessionRegistry {
         now: Instant,
         connection: Option<Arc<ConnectionHandle>>,
     ) -> Result<RegisterOutcome, RegisterError> {
+        self.register_with_generation(params, now, connection)
+            .map(|(outcome, _)| outcome)
+    }
+
+    /// Регистрация с возвратом `connection_generation` из той же критической
+    /// секции, что и запись (нужен WS-циклу для generation-checked disconnect).
+    pub fn register_with_generation(
+        &self,
+        params: SessionRegisterParams,
+        now: Instant,
+        connection: Option<Arc<ConnectionHandle>>,
+    ) -> Result<(RegisterOutcome, u64), RegisterError> {
         // ADR-0035: резолвим config_id ДО взятия write-lock — нужен для
         // cache upsert после успешной регистрации.
         let resolved_config_id = params
@@ -218,6 +241,12 @@ impl SessionRegistry {
                     existing.config_id = resolved_config_id.clone();
                     existing.infobase_name = params.infobase_name;
                     existing.ib_session_number = params.ib_session_number;
+                    //++agent TASK-225 [26.09.2026] O2: identity
+                    // перепривязывается при каждом reconnect — ИБ могла
+                    // переехать в другой кластер, старый ключ невалиден.
+                    existing.cluster_server = params.cluster_server;
+                    existing.database_key = params.database_key;
+                    //++agent TASK-225
                     existing.connection = connection;
                     existing.connection_generation = new_gen;
                     if let Some(hid) = params.host_id {
@@ -232,7 +261,7 @@ impl SessionRegistry {
                     self.mark_tools_changed();
                     self.mark_session_changed();
                     self.upsert_tools_cache(cache_kind, resolved_config_id, cache_tools);
-                    Ok(RegisterOutcome::Reconnected)
+                    Ok((RegisterOutcome::Reconnected, new_gen))
                 }
             };
         }
@@ -246,6 +275,8 @@ impl SessionRegistry {
             version: params.version,
             infobase_name: params.infobase_name,
             ib_session_number: params.ib_session_number,
+            cluster_server: params.cluster_server,
+            database_key: params.database_key,
             tools: params.tools,
             state: SessionState::Active,
             host_id: params.host_id.unwrap_or_else(|| "unknown".to_owned()),
@@ -262,11 +293,17 @@ impl SessionRegistry {
         self.mark_tools_changed();
         self.mark_session_changed();
         self.upsert_tools_cache(cache_kind, resolved_config_id, cache_tools);
-        Ok(RegisterOutcome::Created)
+        Ok((RegisterOutcome::Created, generation))
     }
 
+    /// Persistent кеш содержит только agent-visible tools: internal tools
+    /// не должны утекать в кеш ни через register, ни через tools_changed.
     fn upsert_tools_cache(&self, kind: String, config_id: String, tools: Vec<ToolDescriptor>) {
         if let Some(cache) = self.tools_cache() {
+            let tools = tools
+                .into_iter()
+                .filter(|tool| tool.visibility.is_public())
+                .collect();
             cache.upsert(kind, config_id, tools);
         }
     }
@@ -489,6 +526,7 @@ mod tests {
                 name: tool_name.to_owned(),
                 description: None,
                 input_schema: json!({ "type": "object" }),
+                visibility: Default::default(),
             }],
             config_id: None,
             host_id: None,
@@ -496,6 +534,8 @@ mod tests {
             resources: None,
             prompts: None,
             extras: None,
+            cluster_server: None,
+            database_key: None,
         }
     }
 
@@ -732,11 +772,13 @@ mod tests {
                 name: "a".to_owned(),
                 description: None,
                 input_schema: json!({}),
+                visibility: Default::default(),
             },
             ToolDescriptor {
                 name: "b".to_owned(),
                 description: Some("desc".to_owned()),
                 input_schema: json!({}),
+                visibility: Default::default(),
             },
         ];
         assert!(reg.update_tools("uid-1", new_tools.clone()));
@@ -754,6 +796,7 @@ mod tests {
             name: "x".to_owned(),
             description: None,
             input_schema: json!({}),
+            visibility: Default::default(),
         }];
         // первый update — должен инкрементировать epoch
         let epoch_before_first = reg.tools_epoch();
@@ -771,6 +814,7 @@ mod tests {
             name: "y".to_owned(),
             description: None,
             input_schema: json!({}),
+            visibility: Default::default(),
         }];
         assert!(reg.update_tools("uid-1", other_tools));
         assert!(reg.tools_epoch() > epoch_after_second);
