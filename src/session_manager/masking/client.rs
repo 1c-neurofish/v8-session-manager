@@ -28,7 +28,9 @@ pub struct PreflightRequest {
     pub cluster_server: String,
     pub infobase_name: String,
     //++agent TASK-225
-    pub chat_id: String,
+    /// Самоназвание вызывающего MCP-клиента — только атрибут аудита:
+    /// клиент называет себя сам, ни одно решение доступа от него не зависит.
+    pub caller: Option<String>,
     pub tool_name: String,
     pub arguments: Value,
 }
@@ -50,7 +52,9 @@ pub struct FinalizeRequest {
     pub cluster_server: String,
     pub infobase_name: String,
     //++agent TASK-225
-    pub chat_id: String,
+    /// Самоназвание вызывающего MCP-клиента — только атрибут аудита:
+    /// клиент называет себя сам, ни одно решение доступа от него не зависит.
+    pub caller: Option<String>,
     pub tool_name: String,
     pub outcome: FinalizeOutcome,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,7 +81,7 @@ pub struct FinalizeResponse {
 }
 
 /// Safe terminal event: intentionally cannot carry arguments, response bodies
-/// or an unverified candidate database/chat identity.
+/// or an unverified candidate database identity.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TerminalRequest {
@@ -99,7 +103,9 @@ pub enum TerminalScope {
         instance_id: String,
         cluster_server: String,
         infobase_name: String,
-        chat_id: String,
+        /// Атрибут аудита вызывающего (см. `PreflightRequest::caller`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        caller: Option<String>,
     },
     //++agent TASK-225
     Unverified,
@@ -294,7 +300,7 @@ fn serialize_finalize_request(request: &FinalizeRequest) -> Result<Vec<u8>, Clie
         instance_id: request.instance_id.clone(),
         cluster_server: request.cluster_server.clone(),
         infobase_name: request.infobase_name.clone(),
-        chat_id: request.chat_id.clone(),
+        caller: request.caller.clone(),
         tool_name: request.tool_name.clone(),
         outcome: FinalizeOutcome::TransportError {
             error: serde_json::json!({"code": "RESULT_LIMIT_EXCEEDED"}),
@@ -378,7 +384,7 @@ mod tests {
             instance_id:
                 "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003"
                     .to_owned(),
-            chat_id: "chat".to_owned(),
+            caller: Some("client/1.0 #0123abcd".to_owned()),
             tool_name: "execute_query".to_owned(),
             arguments: json!({"query": "select"}),
         };
@@ -396,7 +402,7 @@ mod tests {
             instance_id:
                 "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003"
                     .to_owned(),
-            chat_id: "chat".to_owned(),
+            caller: Some("client/1.0 #0123abcd".to_owned()),
             tool_name: "execute_query".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
                 result: json!({"success": true, "data": [["masked"]]}),
@@ -407,6 +413,8 @@ mod tests {
         assert_eq!(value["outcome"]["kind"], "tool_result");
         assert_eq!(value["outcome"]["result"]["data"][0][0], "masked");
         assert!(value.get("history_id").is_none());
+        assert!(value.get("chat_id").is_none());
+        assert_eq!(value["caller"], "client/1.0 #0123abcd");
         // Контракт П1: сервис принимает `field_sources`; устаревший ключ
         // `evidence` отклоняется deny_unknown_fields на стороне сервиса.
         assert!(value.get("field_sources").is_some());
@@ -424,7 +432,7 @@ mod tests {
                 instance_id:
                     "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003"
                         .to_owned(),
-                chat_id: "opaque-chat".to_owned(),
+                caller: Some("client/1.0 #0123abcd".to_owned()),
             },
         };
         assert_eq!(
@@ -440,7 +448,7 @@ mod tests {
                     "instance_id": "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003",
                     "cluster_server": "onec-infra",
                     "infobase_name": "contract-ib",
-                    "chat_id": "opaque-chat"
+                    "caller": "client/1.0 #0123abcd"
                 }
             })
         );
@@ -450,13 +458,13 @@ mod tests {
             call_id: "123e4567-e89b-12d3-a456-426614174011".to_owned(),
             correlation_id: "123e4567-e89b-12d3-a456-426614174012".to_owned(),
             tool_name: "execute_query".to_owned(),
-            error_code: "CHAT_IDENTITY_REQUIRED".to_owned(),
+            error_code: "DATABASE_IDENTITY_UNVERIFIED".to_owned(),
             scope: TerminalScope::Unverified,
         };
         let wire = serde_json::to_value(unverified_terminal).unwrap();
         assert_eq!(wire["scope"], json!({"kind": "unverified"}));
         assert!(wire["scope"].get("instance_id").is_none());
-        assert!(wire["scope"].get("chat_id").is_none());
+        assert!(wire["scope"].get("caller").is_none());
     }
 
     #[test]
@@ -471,7 +479,7 @@ mod tests {
             instance_id:
                 "ras:123e4567-e89b-12d3-a456-426614174001:123e4567-e89b-12d3-a456-426614174003"
                     .to_owned(),
-            chat_id: "opaque-chat".to_owned(),
+            caller: Some("client/1.0 #0123abcd".to_owned()),
             tool_name: "execute_query".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
                 result: json!({
@@ -489,7 +497,8 @@ mod tests {
         assert_eq!(wire["correlation_id"], request.correlation_id);
         assert_eq!(wire["instance_id"], request.instance_id);
         assert_eq!(wire["infobase_name"], request.infobase_name);
-        assert_eq!(wire["chat_id"], request.chat_id);
+        assert_eq!(wire["caller"], json!(request.caller));
+        assert!(wire.get("chat_id").is_none());
         assert_eq!(wire["tool_name"], request.tool_name);
         assert_eq!(wire["outcome"]["kind"], "transport_error");
         assert_eq!(

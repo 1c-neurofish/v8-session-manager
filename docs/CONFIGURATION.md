@@ -55,11 +55,6 @@ masking:
   finalize_timeout_ms: 15000
   internal_call_timeout_ms: 10000
   service_expected_uid: 994
-  broker_public_key_path: /etc/v8-session-manager/broker-ed25519.pub.pem
-  broker_issuer: trusted-mcp-broker
-  broker_audience: v8-session-manager
-  broker_max_assertion_ttl_secs: 300
-  conversation_assertion_header: x-v8-conversation-assertion
   internal_tools:
     - mcp_internal_masking_metadata_feed
     - mcp_internal_masking_dictionary_feed
@@ -120,11 +115,24 @@ Prometheus exporter.
 ## Секция `masking`
 
 По умолчанию интеграция выключена. При `enabled: true` обязательны UDS сервиса,
-UDS internal endpoint менеджера, UID peer-а сервиса и Ed25519 public key
-trusted broker-а. Manager принимает
-`conversation_id` только из JWT/JWS header, проверяя `iss`,
-`aud=v8-session-manager`, `iat`, `exp` и максимальный TTL. Tool arguments
-и MCP `_meta` источниками chat identity не являются.
+UDS internal endpoint менеджера и UID peer-а сервиса.
+
+Понятия «разговора» у вызова нет: токены маскирования общие для всех
+вызывающих одной базы. Вызывающий передаётся сервису только как атрибут
+аудита `caller` — `"<clientInfo.name>/<clientInfo.version> #<первые 8
+символов Mcp-Session-Id>"` (stdio — `#stdio`), не длиннее 256 символов.
+Клиент называет себя сам, поэтому ни одно решение доступа от этой метки не
+зависит.
+
+**Миграция со старых конфигов.** Ключи `broker_public_key_path`,
+`broker_issuer`, `broker_audience`, `broker_max_assertion_ttl_secs` и
+`conversation_assertion_header` удалены: при загрузке они молча
+игнорируются, но их следует убрать из YAML. Заголовок
+`x-v8-conversation-assertion` во входящих запросах больше ни на что не
+влияет. Outbox терминальных событий прежнего формата конвертируется при
+старте (поле `chat_id` отбрасывается, события `CHAT_IDENTITY_REQUIRED`
+удаляются). Сервис маскирования и менеджер обновляются согласованно:
+сначала сервис, затем менеджер.
 
 При `enabled: true` **каждый** публичный proxy `tools/call` проходит через
 сервис маскирования (preflight + finalize) — единая точка контроля.
@@ -135,7 +143,7 @@ trusted broker-а. Manager принимает
 Сессия идентифицируется координатами ИБ из `session.register`
 (`cluster_server`/`infobase_name`); при RAS-резолюции — парой GUID-ов
 кластера и ИБ. Сессия без `cluster_server`+`infobase_name` отклоняется
-`DATABASE_IDENTITY_UNVERIFIED` до проверки conversation assertion.
+`DATABASE_IDENTITY_UNVERIFIED` до обращения к сервису.
 
 `managed_tools` — **устаревшее** поле: оставлено для совместимости со
 старыми конфигами, на маршрут не влияет и не валидируется; непустое
