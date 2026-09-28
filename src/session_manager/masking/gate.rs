@@ -214,16 +214,23 @@ impl TerminalOutbox {
 /// недействительным: конвертация не ослабляет строгость outbox.
 fn convert_legacy_outbox(bytes: &[u8]) -> Option<TerminalOutboxSnapshot> {
     let mut value: Value = serde_json::from_slice(bytes).ok()?;
-    if value.get("schema_version")?.as_u64()? != 1 {
+    // Верхний уровень — ровно поля снимка: лишнее поле означает
+    // повреждённый файл, а не прежний формат.
+    let top = value.as_object_mut()?;
+    if top.len() != 2 || top.get("schema_version")?.as_u64()? != 1 {
         return None;
     }
-    let raw_events = value.get_mut("events")?.as_array_mut()?;
+    let raw_events = top.get_mut("events")?.as_array_mut()?;
     let total = raw_events.len();
     let mut events = Vec::with_capacity(total);
     let mut seen = HashSet::new();
     for mut raw in raw_events.drain(..) {
+        // chat_id допустим только там, где его писал прежний формат, —
+        // в verified-scope; в остальных формах это неизвестное поле.
         if let Some(scope) = raw.get_mut("scope").and_then(Value::as_object_mut) {
-            scope.remove("chat_id");
+            if scope.get("kind").and_then(Value::as_str) == Some("verified") {
+                scope.remove("chat_id");
+            }
         }
         let event = serde_json::from_value::<TerminalRequest>(raw).ok()?;
         if event.error_code == "CHAT_IDENTITY_REQUIRED" {
@@ -891,6 +898,35 @@ mod tests {
         assert!(!persisted.contains("CHAT_IDENTITY_REQUIRED"));
         // Повторная загрузка — уже текущий формат.
         assert_eq!(TerminalOutbox::load(path).unwrap().events.len(), 1);
+    }
+
+    #[test]
+    fn legacy_outbox_with_unknown_top_level_field_is_rejected_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(TERMINAL_OUTBOX_FILE);
+        let bytes = serde_json::to_vec(&json!({
+            "schema_version": 1,
+            "unexpected": true,
+            "events": [{
+                "schema_version": 1,
+                "call_id": Uuid::new_v4().to_string(),
+                "correlation_id": Uuid::new_v4().to_string(),
+                "tool_name": "execute_query",
+                "error_code": "SERVICE_NOT_READY",
+                "scope": {
+                    "kind": "verified",
+                    "instance_id": "ras:a:b",
+                    "cluster_server": "srv",
+                    "infobase_name": "ib",
+                    "chat_id": "legacy-conversation"
+                }
+            }]
+        }))
+        .unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(TerminalOutbox::load(path.clone()).is_err());
+        // Повреждённый файл не перезаписывается конвертером.
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 
     #[test]
