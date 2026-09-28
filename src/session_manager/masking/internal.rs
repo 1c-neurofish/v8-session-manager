@@ -260,11 +260,6 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::mpsc;
 
-    const PUBLIC_KEY: &[u8] = br#"-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
------END PUBLIC KEY-----
-"#;
-
     const METADATA_TOOL: &str = "mcp_internal_masking_metadata_feed";
     const CLUSTER: &str = "0de031da-e8d9-43de-bb39-7c8bd4d9855c";
     const INFOBASE: &str = "320f6387-89b5-43fc-b344-67b11f957472";
@@ -281,15 +276,12 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     /// Enabled gate с tempdir-сокетами; маршрут — только по точному ключу
     /// из регистрации.
     fn gate_fixture(dir: &tempfile::TempDir, expected_uid: u32) -> Arc<MaskingGate> {
-        let public_key_path = dir.path().join("broker.pub.pem");
-        std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
         let config = MaskingConfig {
             enabled: true,
             socket_path: dir.path().join("service.sock"),
             internal_listen_path: dir.path().join("manager.sock"),
             internal_call_timeout_ms: 2_000,
             service_expected_uid: Some(expected_uid),
-            broker_public_key_path: public_key_path,
             ..MaskingConfig::default()
         };
         Arc::new(MaskingGate::from_config(&config, dir.path()).unwrap())

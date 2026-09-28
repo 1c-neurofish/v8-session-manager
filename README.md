@@ -273,10 +273,9 @@ Tool `session_list` (единственный встроенный tool мене
 | `mcp.metrics.bind_address` | Prometheus `/metrics` (пусто = выкл.) | `127.0.0.1:9100` |
 | `masking.enabled` | Включить fail-closed внешний masking gate | `false` |
 | `masking.socket_path` | UDS внутреннего API masking service | `/run/1c-masking/internal.sock` |
-| `masking.broker_public_key_path` | Ed25519 PEM public key trusted broker-а | `/etc/v8-session-manager/broker-ed25519.pub.pem` |
 
-При `masking.enabled: true` manager требует проверенный short-lived JWT/JWS
-диалога и успешно завершённые preflight/finalize **для каждого** публичного
+При `masking.enabled: true` manager требует успешно завершённые
+preflight/finalize **для каждого** публичного
 proxy `tools/call` — исключения задаются классификацией инструментов в админке
 сервиса (`managed_tools` в конфиге устарел и игнорируется). База опознаётся
 автоматически по координатам ИБ из `session.register` (`cluster_server` +
@@ -290,7 +289,7 @@ docs/CONFIGURATION.md; логин/пароль RAS опциональны, по 
 регистрация не блокируется: сессия получает ключ `gen:<srvr>/<ref>`,
 под который сервис создаёт отдельную запись (перехода на `ras:`-ключ
 нет — настройки переносятся export/import). Сессия без `cluster_server`+`infobase_name` отклоняется
-`DATABASE_IDENTITY_UNVERIFIED` до проверки assertion; неизвестный сервису
+`DATABASE_IDENTITY_UNVERIFIED` до обращения к сервису; неизвестный сервису
 инструмент отклоняется до вызова 1С и регистрируется
 в очереди классификации. Любая ошибка закрывает вызов до выдачи результата;
 raw fallback отсутствует. Agent-facing параметры маскирования, history IDs

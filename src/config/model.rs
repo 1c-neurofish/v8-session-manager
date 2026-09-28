@@ -48,12 +48,10 @@ pub struct MaskingConfig {
     /// Дедлайн одного internal tool.call (например, страница словаря)
     /// на стороне менеджера.
     pub internal_call_timeout_ms: u64,
-    /// PEM public key доверенного broker-а для проверки JWT/JWS assertion.
-    pub broker_public_key_path: PathBuf,
-    pub broker_issuer: String,
-    pub broker_audience: String,
-    pub broker_max_assertion_ttl_secs: u64,
-    pub conversation_assertion_header: String,
+    // Проверка conversation-assertion брокера упразднена: у вызова нет
+    // понятия «разговора», токены маскирования общие на базу. Прежние
+    // ключи `broker_*` / `conversation_assertion_header` в YAML
+    // игнорируются (структура не deny_unknown_fields) — их следует убрать.
     //++agent TASK-225 [25.09.2026]
     /// УСТАРЕВШЕЕ: при `masking.enabled=true` ВСЕ публичные proxy-вызовы
     /// проходят через сервис маскирования — список больше не влияет на
@@ -90,11 +88,6 @@ impl Default for MaskingConfig {
             preflight_timeout_ms: 3_000,
             finalize_timeout_ms: 15_000,
             internal_call_timeout_ms: 10_000,
-            broker_public_key_path: PathBuf::from("/etc/v8-session-manager/broker-ed25519.pub.pem"),
-            broker_issuer: "trusted-mcp-broker".to_owned(),
-            broker_audience: "v8-session-manager".to_owned(),
-            broker_max_assertion_ttl_secs: 300,
-            conversation_assertion_header: "x-v8-conversation-assertion".to_owned(),
             //++agent TASK-225 [25.09.2026]
             // Устаревшее поле: пустой default, чтобы отсутствие ключа в
             // конфиге не порождало ложное deprecation-предупреждение.

@@ -37,7 +37,7 @@ async fn isolated_masking_service_wire_contract() {
             cluster_server: "onec-infra".to_owned(),
             infobase_name: "contract-ib".to_owned(),
             instance_id: format!("ras:{}:{}", CONFIGURED_CLUSTER_GUID, UNKNOWN_INFOBASE_GUID),
-            chat_id: "contract-chat".to_owned(),
+            caller: Some("contract-client/1.0 #0000abcd".to_owned()),
             tool_name: "get_metadata".to_owned(),
             arguments: json!({"probe": "contract"}),
         })
@@ -63,7 +63,7 @@ async fn isolated_masking_service_wire_contract() {
                 "ras:{}:{}",
                 CONFIGURED_CLUSTER_GUID, CONFIGURED_INFOBASE_GUID
             ),
-            chat_id: "contract-chat".to_owned(),
+            caller: Some("contract-client/1.0 #0000abcd".to_owned()),
             tool_name: "get_metadata".to_owned(),
             arguments: arguments.clone(),
         })
@@ -84,7 +84,7 @@ async fn isolated_masking_service_wire_contract() {
                 "ras:{}:{}",
                 CONFIGURED_CLUSTER_GUID, CONFIGURED_INFOBASE_GUID
             ),
-            chat_id: "contract-chat".to_owned(),
+            caller: Some("contract-client/1.0 #0000abcd".to_owned()),
             tool_name: "get_metadata".to_owned(),
             outcome: FinalizeOutcome::ToolResult {
                 // Контракт Р2: непрозрачный бизнес-результат; `data` должна
@@ -125,7 +125,7 @@ async fn isolated_masking_service_wire_contract() {
                 "ras:{}:{}",
                 CONFIGURED_CLUSTER_GUID, CONFIGURED_INFOBASE_GUID
             ),
-            chat_id: "contract-chat".to_owned(),
+            caller: Some("contract-client/1.0 #0000abcd".to_owned()),
             tool_name: "get_metadata".to_owned(),
             outcome: FinalizeOutcome::TransportError {
                 error: json!({"code": "fixture_transport_error"}),
@@ -148,7 +148,7 @@ async fn isolated_masking_service_wire_contract() {
             "ras:{}:{}",
             CONFIGURED_CLUSTER_GUID, CONFIGURED_INFOBASE_GUID
         ),
-        chat_id: "contract-chat".to_owned(),
+        caller: Some("contract-client/1.0 #0000abcd".to_owned()),
         tool_name: "execute_query".to_owned(),
         outcome: FinalizeOutcome::ToolResult {
             result: json!({

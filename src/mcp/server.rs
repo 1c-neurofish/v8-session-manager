@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use axum::body::{to_bytes, Body};
 use axum::http::{
-    header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
+    header::{HeaderValue, AUTHORIZATION, CONTENT_TYPE},
     Method, Request, Response, StatusCode,
 };
 use rmcp::{
@@ -51,7 +51,7 @@ use crate::session_manager::management;
 use crate::session_manager::masking::client::FinalizeOutcome;
 use crate::session_manager::masking::gate::transport_error_outcome;
 use crate::session_manager::masking::internal::spawn_internal_endpoint;
-use crate::session_manager::masking::{MaskingFailure, MaskingGate, TrustedConversationContext};
+use crate::session_manager::masking::{CallerInfo, MaskingFailure, MaskingGate};
 use crate::session_manager::notify::{spawn_notifier, ToolsListChangedNotifier, DEBOUNCE_WINDOW};
 use crate::session_manager::protocol::{ToolCallParams, ToolCallResult};
 use crate::session_manager::registry::SessionRegistry;
@@ -440,9 +440,8 @@ impl ServerHandler for McpToolServer {
         // disconnect/cancel клиента менеджер послал `tool.cancel` в сессию,
         // а не ждал жёсткого 60s дедлайна.
         let cancel = context.ct.clone();
-        let conversation = trusted_conversation_context(&context);
-        self.call_proxy_tool_inner(request, cancel, conversation)
-            .await
+        let caller = caller_info(&context);
+        self.call_proxy_tool_inner(request, cancel, caller).await
     }
 }
 
@@ -491,7 +490,7 @@ impl McpToolServer {
         &self,
         request: CallToolRequestParams,
         cancellation: CancellationToken,
-        trusted_conversation: Option<TrustedConversationContext>,
+        caller: CallerInfo,
     ) -> Result<CallToolResult, ErrorData> {
         let (arguments, requested_session_id, no_deadline_requested) =
             extract_manager_arguments(request.arguments)?;
@@ -569,7 +568,7 @@ impl McpToolServer {
         // При masking.enabled каждый публичный proxy tools/call идёт через
         // gate — managed_tools больше не участвует в маршруте. Проверка
         // привязки к database_id идёт ПЕРВОЙ: непривязанная сессия получает
-        // DATABASE_IDENTITY_UNVERIFIED даже при отсутствующем assertion.
+        // DATABASE_IDENTITY_UNVERIFIED до любого обращения к сервису.
         //++agent TASK-225
         let (masking_context, arguments) = if self.masking_gate.is_enabled() {
             let call_id = uuid::Uuid::new_v4().to_string();
@@ -595,30 +594,9 @@ impl McpToolServer {
                 }
                 return Ok(masking_failure_response(failure));
             };
-            let Some(conversation) = trusted_conversation.as_ref() else {
-                let failure = MaskingFailure::with_correlation(
-                    "CHAT_IDENTITY_REQUIRED",
-                    "Для операции требуется подтверждённый контекст диалога",
-                    correlation_id.clone(),
-                );
-                let terminal = self.masking_gate.unverified_terminal(
-                    call_id,
-                    correlation_id.clone(),
-                    request.name.as_ref(),
-                    &failure.code,
-                );
-                if self.masking_gate.record_terminal(terminal).await.is_err() {
-                    return Ok(masking_failure_response(MaskingFailure::with_correlation(
-                        "HISTORY_UNAVAILABLE",
-                        "Операция временно недоступна",
-                        correlation_id,
-                    )));
-                }
-                return Ok(masking_failure_response(failure));
-            };
             let context = self.masking_gate.call_context(
                 identity,
-                conversation,
+                &caller,
                 request.name.as_ref(),
                 call_id,
                 correlation_id,
@@ -684,14 +662,22 @@ impl McpToolServer {
     }
 }
 
-fn trusted_conversation_context(
-    context: &RequestContext<RoleServer>,
-) -> Option<TrustedConversationContext> {
-    context
-        .extensions
-        .get::<axum::http::request::Parts>()
-        .and_then(|parts| parts.extensions.get::<TrustedConversationContext>())
-        .cloned()
+/// Самоназвание вызывающего для аудита: `clientInfo` из `initialize` и
+/// `Mcp-Session-Id` HTTP-транспорта (stdio — `stdio`). Не механизм
+/// безопасности: клиент называет себя сам, решения доступа от этих полей
+/// не зависят.
+fn caller_info(context: &RequestContext<RoleServer>) -> CallerInfo {
+    let parts = context.extensions.get::<axum::http::request::Parts>();
+    let mcp_session_id = match parts {
+        Some(parts) => session_id_from_headers(&parts.headers).map(|id| id.to_string()),
+        None => Some("stdio".to_owned()),
+    };
+    let client = context.peer.peer_info().map(|info| &info.client_info);
+    CallerInfo {
+        mcp_session_id,
+        client_name: client.map(|client| client.name.clone()),
+        client_version: client.map(|client| client.version.clone()),
+    }
 }
 
 /// Конверт результата managed tool из первого text-блока `content`
@@ -925,11 +911,6 @@ mod tests {
     use serde_json::json;
     use std::path::PathBuf;
     use std::time::Instant;
-
-    const TEST_BROKER_PUBLIC_KEY: &[u8] = br#"-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
------END PUBLIC KEY-----
-"#;
 
     fn register_fake_session(registry: &SessionRegistry, session_id: &str, tools: &[&str]) {
         registry
@@ -1198,10 +1179,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     //++agent TASK-225
 
     #[tokio::test]
-    async fn configured_route_fails_closed_without_conversation_or_service() {
+    async fn configured_route_fails_closed_without_service_for_any_caller() {
         let temp = tempfile::tempdir().unwrap();
-        let public_key_path = temp.path().join("broker.pub.pem");
-        std::fs::write(&public_key_path, TEST_BROKER_PUBLIC_KEY).unwrap();
         // O2: identity сессии = ключ `ras:<c>:<i>`, вычисленный менеджером
         // при регистрации (здесь фикстура сразу несёт ключ).
         let cluster_guid = uuid::Uuid::new_v4();
@@ -1211,7 +1190,6 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             socket_path: temp.path().join("service-not-running.sock"),
             internal_listen_path: temp.path().join("manager.sock"),
             service_expected_uid: Some(994),
-            broker_public_key_path: public_key_path,
             ..Default::default()
         };
         let config = Arc::new(AppConfig {
@@ -1255,37 +1233,30 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                 json!("raw-marker-must-never-enter-terminal-ledger"),
             )]),
         );
-        let missing_conversation = server
-            .call_proxy_tool_inner(request.clone(), CancellationToken::new(), None)
+        // Метка вызывающего — только атрибут аудита: вызов без неё идёт
+        // тем же путём (разговора как условия доступа больше нет), а
+        // недоступный сервис даёт отказ до вызова 1С.
+        let anonymous = server
+            .call_proxy_tool_inner(
+                request.clone(),
+                CancellationToken::new(),
+                CallerInfo::default(),
+            )
             .await
             .unwrap();
-        assert_eq!(missing_conversation.is_error, Some(true));
-        let missing_conversation_body = missing_conversation.structured_content.unwrap();
-        assert_eq!(
-            missing_conversation_body["error"]["code"],
-            "CHAT_IDENTITY_REQUIRED"
-        );
-
-        let outbox_path = temp.path().join("masking_terminal_outbox.json");
-        let outbox: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&outbox_path).unwrap()).unwrap();
-        assert_eq!(outbox["events"].as_array().unwrap().len(), 1);
-        assert_eq!(outbox["events"][0]["scope"], json!({"kind":"unverified"}));
-        assert_eq!(
-            outbox["events"][0]["correlation_id"],
-            missing_conversation_body["error"]["correlation_id"]
-        );
-        assert!(!serde_json::to_string(&outbox)
-            .unwrap()
-            .contains("raw-marker-must-never-enter-terminal-ledger"));
+        assert_eq!(anonymous.is_error, Some(true));
+        let anonymous_body = anonymous.structured_content.unwrap();
+        assert_eq!(anonymous_body["error"]["code"], "SERVICE_NOT_READY");
 
         let service_unavailable = server
             .call_proxy_tool_inner(
                 request,
                 CancellationToken::new(),
-                Some(TrustedConversationContext {
-                    conversation_id: "opaque-dev-conversation".to_owned(),
-                }),
+                CallerInfo {
+                    mcp_session_id: Some("abcdef1234567890".to_owned()),
+                    client_name: Some("test-client".to_owned()),
+                    client_version: Some("1.0".to_owned()),
+                },
             )
             .await
             .unwrap();
@@ -1295,17 +1266,22 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             service_unavailable_body["error"]["code"],
             "SERVICE_NOT_READY"
         );
+        let outbox_path = temp.path().join("masking_terminal_outbox.json");
         let outbox: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&outbox_path).unwrap()).unwrap();
         assert_eq!(outbox["events"].as_array().unwrap().len(), 2);
-        assert_eq!(outbox["events"][1]["scope"]["kind"], "verified");
+        for event in outbox["events"].as_array().unwrap() {
+            assert_eq!(event["scope"]["kind"], "verified");
+            assert_eq!(
+                event["scope"]["instance_id"],
+                format!("ras:{cluster_guid}:{infobase_guid}")
+            );
+            assert!(event["scope"].get("chat_id").is_none());
+        }
+        assert!(outbox["events"][0]["scope"].get("caller").is_none());
         assert_eq!(
-            outbox["events"][1]["scope"]["instance_id"],
-            format!("ras:{cluster_guid}:{infobase_guid}")
-        );
-        assert_eq!(
-            outbox["events"][1]["scope"]["chat_id"],
-            "opaque-dev-conversation"
+            outbox["events"][1]["scope"]["caller"],
+            "test-client/1.0 #abcdef12"
         );
         assert_eq!(
             outbox["events"][1]["correlation_id"],
@@ -1319,14 +1295,12 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     //++agent TASK-225 [25.09.2026]
     // Gate при enabled покрывает КАЖДЫЙ публичный proxy-вызов: имя
     // инструмента из бывшего managed_tools списка роли не играет, а
-    // непривязанная к database_id сессия отклоняется до проверки
-    // conversation assertion. Internal tools до gate не доходят —
+    // непривязанная к database_id сессия отклоняется до обращения к
+    // сервису. Internal tools до gate не доходят —
     // resolve_published их не публикует.
     #[tokio::test]
     async fn all_public_calls_route_through_gate_and_unbound_is_denied() {
         let temp = tempfile::tempdir().unwrap();
-        let public_key_path = temp.path().join("broker.pub.pem");
-        std::fs::write(&public_key_path, TEST_BROKER_PUBLIC_KEY).unwrap();
         // O2: identity сессии = ключ `ras:<c>:<i>`, вычисленный менеджером
         // при регистрации (здесь фикстура сразу несёт ключ).
         let cluster_guid = uuid::Uuid::new_v4();
@@ -1336,7 +1310,6 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             socket_path: temp.path().join("service-not-running.sock"),
             internal_listen_path: temp.path().join("manager.sock"),
             service_expected_uid: Some(994),
-            broker_public_key_path: public_key_path,
             ..Default::default()
         };
         let config = Arc::new(AppConfig {
@@ -1391,23 +1364,23 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         register_fake_session(&registry, "unbound-session", &["any_tool"]);
 
         // Инструмент вне бывшего managed_tools — доходит до gate:
-        // отказ по отсутствию conversation assertion, а не raw-вызов в 1С.
+        // сервис недоступен → отказ fail-closed, а не raw-вызов в 1С.
         let request = CallToolRequestParams::new("brand_new_tool");
         let denied = server
-            .call_proxy_tool_inner(request, CancellationToken::new(), None)
+            .call_proxy_tool_inner(request, CancellationToken::new(), CallerInfo::default())
             .await
             .unwrap();
         assert_eq!(denied.is_error, Some(true));
         assert_eq!(
             denied.structured_content.unwrap()["error"]["code"],
-            "CHAT_IDENTITY_REQUIRED"
+            "SERVICE_NOT_READY"
         );
 
         // Сессия без привязки — DATABASE_IDENTITY_UNVERIFIED даже без
         // assertion (проверка привязки идёт первой).
         let request = CallToolRequestParams::new("any_tool");
         let denied = server
-            .call_proxy_tool_inner(request, CancellationToken::new(), None)
+            .call_proxy_tool_inner(request, CancellationToken::new(), CallerInfo::default())
             .await
             .unwrap();
         assert_eq!(denied.is_error, Some(true));
@@ -1421,7 +1394,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         // ошибкой unknown_tool (не protocol error и не вызов в 1С).
         let request = CallToolRequestParams::new("mcp_internal_masking_metadata_feed");
         let denied = server
-            .call_proxy_tool_inner(request, CancellationToken::new(), None)
+            .call_proxy_tool_inner(request, CancellationToken::new(), CallerInfo::default())
             .await
             .unwrap();
         assert_eq!(denied.is_error, Some(true));
@@ -1434,7 +1407,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         // тот же structured unknown_tool вместо method_not_found.
         let request = CallToolRequestParams::new("get_1c_version_probe");
         let denied = server
-            .call_proxy_tool_inner(request, CancellationToken::new(), None)
+            .call_proxy_tool_inner(request, CancellationToken::new(), CallerInfo::default())
             .await
             .unwrap();
         assert_eq!(denied.is_error, Some(true));
@@ -1697,18 +1670,11 @@ struct HttpMcpService {
     admission: HttpSessionAdmission,
     stateful_sessions: bool,
     auth_token: Option<String>,
-    masking_gate: Arc<MaskingGate>,
-    conversation_assertion_header: HeaderName,
 }
 
 impl HttpMcpService {
     fn new(server: McpToolServer, config: Arc<AppConfig>, shutdown: CancellationToken) -> Self {
         let auth_token = config.mcp.http.auth_token.clone();
-        let masking_gate = Arc::clone(&server.masking_gate);
-        let conversation_assertion_header = masking_gate
-            .assertion_header()
-            .parse()
-            .expect("validated conversation assertion header");
         let session_manager = Arc::new(LocalSessionManager {
             session_config: SessionConfig {
                 keep_alive: config
@@ -1737,8 +1703,6 @@ impl HttpMcpService {
             admission,
             stateful_sessions: config.mcp.http.stateful_sessions,
             auth_token,
-            masking_gate,
-            conversation_assertion_header,
         }
     }
 
@@ -1754,22 +1718,8 @@ impl HttpMcpService {
             }
         }
 
-        // Assertion удаляется до передачи в rmcp. В RequestContext попадает
-        // только проверенная server-side identity, а не JWT или spoofable _meta.
-        // Bearer gate выполняется раньше, чтобы unauthenticated request не мог
-        // поглотить одноразовый `jti` валидного broker assertion.
-        if let Some(assertion) = request
-            .headers_mut()
-            .remove(&self.conversation_assertion_header)
-            .and_then(|value| value.to_str().ok().map(ToOwned::to_owned))
-        {
-            if let Some(context) = self
-                .masking_gate
-                .verify_conversation_assertion(assertion.as_str())
-            {
-                request.extensions_mut().insert(context);
-            }
-        }
+        // Прежний заголовок conversation-assertion больше ничего не значит:
+        // у вызова нет понятия разговора, заголовок просто игнорируется.
 
         let rpc_method = if method == Method::POST {
             match sanitize_http_rpc_request(request).await {

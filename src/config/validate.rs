@@ -42,14 +42,11 @@ pub enum ConfigValidationError {
 
     #[error("masking.service_expected_uid is required when masking is enabled")]
     MissingServiceExpectedUid,
-
     //++agent TASK-225 [26.09.2026] N: `identity_bindings` и YAML-настройки
     // RAS удалены — маршрут по (GUID кластера, GUID ИБ), RAS-резолюция
     // конфигурируется env (см. masking::ras), пустой/отсутствующий RAS —
     // штатный режим, не ошибка валидации.
     //++agent TASK-225
-    #[error("masking broker verification settings are invalid")]
-    InvalidMaskingBrokerSettings,
 }
 
 pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
@@ -138,20 +135,6 @@ pub fn validate(config: &AppConfig) -> Result<(), ConfigValidationError> {
         if config.masking.service_expected_uid.is_none() {
             return Err(ConfigValidationError::MissingServiceExpectedUid);
         }
-        if !config.masking.broker_public_key_path.is_absolute()
-            || config.masking.broker_issuer.is_empty()
-            || config.masking.broker_audience != "v8-session-manager"
-            || config.masking.broker_max_assertion_ttl_secs == 0
-            || config.masking.broker_max_assertion_ttl_secs > 300
-            || config.masking.conversation_assertion_header.is_empty()
-            || config
-                .masking
-                .conversation_assertion_header
-                .parse::<axum::http::HeaderName>()
-                .is_err()
-        {
-            return Err(ConfigValidationError::InvalidMaskingBrokerSettings);
-        }
     }
 
     Ok(())
@@ -213,7 +196,6 @@ mod tests {
         cfg.masking.enabled = true;
         cfg.masking.socket_path = PathBuf::from("/run/mask.sock");
         cfg.masking.internal_listen_path = PathBuf::from("/run/mask-manager.sock");
-        cfg.masking.broker_public_key_path = PathBuf::from("/etc/manager/broker.pub.pem");
         // TASK-225/N: identity_bindings удалены — маршрут по координатам
         // кластера (cluster_server + RAS-резолвленные GUID-ы), YAML-привязок
         // и RAS-конфига больше нет: RAS задаётся env и опционален.

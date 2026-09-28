@@ -1,9 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AsyncMutex;
@@ -26,29 +25,54 @@ const TERMINAL_OUTBOX_FILE: &str = "masking_terminal_outbox.json";
 const MAX_TERMINAL_OUTBOX_EVENTS: usize = 10_000;
 const TERMINAL_REPLAY_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Проверенная broker-ом identity диалога; agent payload не является её источником.
-#[derive(Debug, Clone)]
-pub struct TrustedConversationContext {
-    pub conversation_id: String,
+/// Максимальная длина метки вызывающего (символов).
+pub const MAX_CALLER_LABEL_CHARS: usize = 256;
+
+/// Самоназвание вызывающего MCP-клиента для аудита.
+///
+/// НЕ механизм безопасности: клиент называет себя сам (`clientInfo` из
+/// `initialize`), а идентификатор MCP-сессии знает только транспорт.
+/// Ни одно решение доступа от этих полей не зависит — они попадают только
+/// в запись истории/аудита сервиса маскирования.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CallerInfo {
+    pub mcp_session_id: Option<String>,
+    pub client_name: Option<String>,
+    pub client_version: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ConversationClaims {
-    conversation_id: String,
-    jti: String,
-    exp: usize,
-    iat: usize,
-    aud: String,
-    iss: String,
+impl CallerInfo {
+    /// `"<client_name>/<client_version> #<первые 8 символов сессии>"`,
+    /// не длиннее 256 символов, управляющие символы заменены на `?`.
+    /// `None`, если о вызывающем ничего не известно.
+    pub fn label(&self) -> Option<String> {
+        let mut label = String::new();
+        if let Some(name) = self.client_name.as_deref().filter(|v| !v.is_empty()) {
+            label.push_str(name);
+            if let Some(version) = self.client_version.as_deref().filter(|v| !v.is_empty()) {
+                label.push('/');
+                label.push_str(version);
+            }
+        }
+        if let Some(session) = self.mcp_session_id.as_deref().filter(|v| !v.is_empty()) {
+            if !label.is_empty() {
+                label.push(' ');
+            }
+            label.push('#');
+            label.extend(session.chars().take(8));
+        }
+        if label.is_empty() {
+            return None;
+        }
+        Some(
+            label
+                .chars()
+                .map(|ch| if ch.is_control() { '?' } else { ch })
+                .take(MAX_CALLER_LABEL_CHARS)
+                .collect(),
+        )
+    }
 }
-
-struct ConversationVerifier {
-    key: DecodingKey,
-    validation: Validation,
-    replay_cache: Mutex<HashMap<String, usize>>,
-}
-
-const MAX_ASSERTION_REPLAY_ENTRIES: usize = 10_000;
 
 /// Общая idempotency identity preflight/finalize одного вызова.
 #[derive(Debug, Clone)]
@@ -59,7 +83,8 @@ pub struct MaskingCallContext {
     // RAS-резолвленная менеджером при session.register.
     pub database: SessionDatabaseIdentity,
     //++agent TASK-225
-    pub chat_id: String,
+    /// Метка вызывающего — только аудит (см. `CallerInfo`).
+    pub caller: Option<String>,
     pub tool_name: String,
 }
 
@@ -106,8 +131,19 @@ impl TerminalOutbox {
     fn load(path: PathBuf) -> Result<Self, String> {
         let events = match std::fs::read(&path) {
             Ok(bytes) => {
-                let snapshot: TerminalOutboxSnapshot = serde_json::from_slice(&bytes)
-                    .map_err(|_| "invalid masking terminal outbox".to_owned())?;
+                let snapshot: TerminalOutboxSnapshot = match serde_json::from_slice(&bytes) {
+                    Ok(snapshot) => snapshot,
+                    Err(_) => {
+                        let snapshot = convert_legacy_outbox(&bytes)
+                            .ok_or_else(|| "invalid masking terminal outbox".to_owned())?;
+                        let outbox = Self {
+                            path: path.clone(),
+                            events: snapshot.events.clone(),
+                        };
+                        outbox.persist()?;
+                        snapshot
+                    }
+                };
                 if snapshot.schema_version != 1
                     || snapshot.events.len() > MAX_TERMINAL_OUTBOX_EVENTS
                     || snapshot.events.iter().any(|event| !valid_terminal(event))
@@ -170,6 +206,56 @@ impl TerminalOutbox {
     }
 }
 
+/// Outbox прежнего формата (verified-scope с `chat_id`): поле разговора
+/// отбрасывается (перенос в метку вызывающего не нужен), события с
+/// упразднённым кодом `CHAT_IDENTITY_REQUIRED` удаляются с предупреждением —
+/// это только терминальные отказы без данных. Любое другое отклонение от
+/// формы (лишние поля, неизвестные коды) по-прежнему делает файл
+/// недействительным: конвертация не ослабляет строгость outbox.
+fn convert_legacy_outbox(bytes: &[u8]) -> Option<TerminalOutboxSnapshot> {
+    let mut value: Value = serde_json::from_slice(bytes).ok()?;
+    // Верхний уровень — ровно поля снимка: лишнее поле означает
+    // повреждённый файл, а не прежний формат.
+    let top = value.as_object_mut()?;
+    if top.len() != 2 || top.get("schema_version")?.as_u64()? != 1 {
+        return None;
+    }
+    let raw_events = top.get_mut("events")?.as_array_mut()?;
+    let total = raw_events.len();
+    let mut events = Vec::with_capacity(total);
+    let mut seen = HashSet::new();
+    for mut raw in raw_events.drain(..) {
+        // chat_id допустим только там, где его писал прежний формат, —
+        // в verified-scope; в остальных формах это неизвестное поле.
+        if let Some(scope) = raw.get_mut("scope").and_then(Value::as_object_mut) {
+            if scope.get("kind").and_then(Value::as_str) == Some("verified") {
+                scope.remove("chat_id");
+            }
+        }
+        let event = serde_json::from_value::<TerminalRequest>(raw).ok()?;
+        if event.error_code == "CHAT_IDENTITY_REQUIRED" {
+            continue;
+        }
+        if !valid_terminal(&event)
+            || events.len() >= MAX_TERMINAL_OUTBOX_EVENTS
+            || !seen.insert(event.call_id.clone())
+        {
+            return None;
+        }
+        events.push(event);
+    }
+    let dropped = total - events.len();
+    tracing::warn!(
+        kept = events.len(),
+        dropped,
+        "masking terminal outbox converted from the legacy chat-scoped format"
+    );
+    Some(TerminalOutboxSnapshot {
+        schema_version: 1,
+        events,
+    })
+}
+
 fn ensure_unique_terminal_calls(events: &[TerminalRequest]) -> Result<(), String> {
     let mut calls = HashSet::with_capacity(events.len());
     if events.iter().all(|event| calls.insert(&event.call_id)) {
@@ -194,15 +280,14 @@ fn valid_terminal(event: &TerminalRequest) -> bool {
         TerminalScope::Verified {
             cluster_server,
             infobase_name,
-            chat_id,
+            caller,
             ..
         } => {
             !cluster_server.is_empty()
                 && cluster_server.len() <= 512
                 && !infobase_name.is_empty()
                 && infobase_name.len() <= 512
-                && !chat_id.is_empty()
-                && chat_id.len() <= 512
+                && valid_caller(caller.as_deref())
                 && matches!(
                     event.error_code.as_str(),
                     "ACTION_REQUIRED"
@@ -221,10 +306,16 @@ fn valid_terminal(event: &TerminalRequest) -> bool {
         }
         TerminalScope::Unverified => matches!(
             event.error_code.as_str(),
-            "CHAT_IDENTITY_REQUIRED" | "DATABASE_IDENTITY_UNVERIFIED" | "SERVICE_NOT_READY"
+            "DATABASE_IDENTITY_UNVERIFIED" | "SERVICE_NOT_READY"
         ),
     };
     allowed
+}
+
+fn valid_caller(caller: Option<&str>) -> bool {
+    caller.is_none_or(|value| {
+        value.chars().count() <= MAX_CALLER_LABEL_CHARS && !value.chars().any(char::is_control)
+    })
 }
 
 /// Manager-side fail-closed gate внешнего сервиса маскирования.
@@ -239,9 +330,6 @@ pub struct MaskingGate {
     ras: Option<Arc<RasResolver>>,
     //++agent TASK-225
     client: Option<MaskingServiceClient>,
-    verifier: Option<Arc<ConversationVerifier>>,
-    assertion_header: String,
-    max_assertion_ttl_secs: u64,
     terminal_outbox: Option<Arc<AsyncMutex<TerminalOutbox>>>,
     /// UDS-listener вызовов сервис → менеджер (`POST /internal/v1/tools/call`).
     internal_listen_path: PathBuf,
@@ -259,24 +347,12 @@ impl MaskingGate {
                 internal_tools: Arc::new(config.internal_tools.iter().cloned().collect()),
                 ras: None,
                 client: None,
-                verifier: None,
-                assertion_header: config.conversation_assertion_header.clone(),
-                max_assertion_ttl_secs: config.broker_max_assertion_ttl_secs,
                 terminal_outbox: None,
                 internal_listen_path: config.internal_listen_path.clone(),
                 service_expected_uid: config.service_expected_uid,
                 internal_call_timeout: Duration::from_millis(config.internal_call_timeout_ms),
             });
         }
-        let pem = std::fs::read(&config.broker_public_key_path)
-            .map_err(|_| "cannot read masking broker public key".to_owned())?;
-        let key = DecodingKey::from_ed_pem(&pem)
-            .map_err(|_| "invalid masking broker Ed25519 public key".to_owned())?;
-        let mut validation = Validation::new(Algorithm::EdDSA);
-        validation.set_audience(&[config.broker_audience.as_str()]);
-        validation.set_issuer(&[config.broker_issuer.as_str()]);
-        validation.validate_exp = true;
-        validation.leeway = 0;
         //++agent TASK-225 [25.09.2026]
         // managed_tools устарел и на маршрут не влияет: все публичные
         // proxy-вызовы идут через gate; непустое значение — deprecation
@@ -296,13 +372,6 @@ impl MaskingGate {
                 Duration::from_millis(config.preflight_timeout_ms),
                 Duration::from_millis(config.finalize_timeout_ms),
             )),
-            verifier: Some(Arc::new(ConversationVerifier {
-                key,
-                validation,
-                replay_cache: Mutex::new(HashMap::new()),
-            })),
-            assertion_header: config.conversation_assertion_header.clone(),
-            max_assertion_ttl_secs: config.broker_max_assertion_ttl_secs,
             terminal_outbox: Some(Arc::new(AsyncMutex::new(TerminalOutbox::load(
                 work_path.join(TERMINAL_OUTBOX_FILE),
             )?))),
@@ -356,47 +425,6 @@ impl MaskingGate {
         self.enabled
     }
 
-    pub fn assertion_header(&self) -> &str {
-        &self.assertion_header
-    }
-
-    /// Проверяет short-lived EdDSA JWT, включая `iss`, `aud`, `exp`.
-    pub fn verify_conversation_assertion(
-        &self,
-        assertion: &str,
-    ) -> Option<TrustedConversationContext> {
-        let verifier = self.verifier.as_ref()?;
-        let claims = decode::<ConversationClaims>(assertion, &verifier.key, &verifier.validation)
-            .ok()?
-            .claims;
-        if claims.conversation_id.is_empty()
-            || claims.conversation_id.len() > 512
-            || claims.jti.is_empty()
-            || claims.jti.len() > 256
-        {
-            return None;
-        }
-        let now = chrono::Utc::now().timestamp().max(0) as usize;
-        if claims.iat > now
-            || claims.exp <= claims.iat
-            || claims.exp.saturating_sub(claims.iat) as u64 > self.max_assertion_ttl_secs
-        {
-            return None;
-        }
-        let mut replay_cache = verifier.replay_cache.lock().ok()?;
-        replay_cache.retain(|_, exp| *exp > now);
-        if replay_cache.contains_key(&claims.jti)
-            || replay_cache.len() >= MAX_ASSERTION_REPLAY_ENTRIES
-        {
-            return None;
-        }
-        replay_cache.insert(claims.jti, claims.exp);
-        let _validated_registered_claims = (claims.aud, claims.iss);
-        Some(TrustedConversationContext {
-            conversation_id: claims.conversation_id,
-        })
-    }
-
     //++agent TASK-225 [26.09.2026]
     /// ОВ-2/Б12: клиент сервиса для read-only вызовов вне контура
     /// маскирования (`masking_export_setup`). `None` — masking.enabled=false.
@@ -424,7 +452,7 @@ impl MaskingGate {
     pub fn call_context(
         &self,
         identity: SessionDatabaseIdentity,
-        conversation: &TrustedConversationContext,
+        caller: &CallerInfo,
         tool_name: &str,
         call_id: String,
         correlation_id: String,
@@ -433,7 +461,7 @@ impl MaskingGate {
             call_id,
             correlation_id,
             database: identity,
-            chat_id: conversation.conversation_id.clone(),
+            caller: caller.label(),
             tool_name: tool_name.to_owned(),
         }
     }
@@ -466,7 +494,7 @@ impl MaskingGate {
                 instance_id: context.database.instance_id.clone(),
                 cluster_server: context.database.cluster_server.clone(),
                 infobase_name: context.database.infobase_name.clone(),
-                chat_id: context.chat_id.clone(),
+                caller: context.caller.clone(),
             },
         }
     }
@@ -526,7 +554,7 @@ impl MaskingGate {
             instance_id: context.database.instance_id.clone(),
             cluster_server: context.database.cluster_server.clone(),
             infobase_name: context.database.infobase_name.clone(),
-            chat_id: context.chat_id.clone(),
+            caller: context.caller.clone(),
             tool_name: context.tool_name.clone(),
             arguments,
         };
@@ -592,7 +620,7 @@ impl MaskingGate {
             instance_id: context.database.instance_id.clone(),
             cluster_server: context.database.cluster_server.clone(),
             infobase_name: context.database.infobase_name.clone(),
-            chat_id: context.chat_id.clone(),
+            caller: context.caller.clone(),
             tool_name: context.tool_name.clone(),
             outcome,
             field_sources,
@@ -724,21 +752,12 @@ mod tests {
     use hyper::service::service_fn;
     use hyper::{Request, Response};
     use hyper_util::rt::TokioIo;
-    use jsonwebtoken::{encode, EncodingKey, Header};
     use serde_json::json;
     use std::convert::Infallible;
     use std::os::unix::fs::PermissionsExt;
+    use std::sync::Mutex;
     use std::time::Instant;
     use tokio::net::UnixListener;
-
-    const PRIVATE_KEY: &[u8] = br#"-----BEGIN PRIVATE KEY-----
-MC4CAQAwBQYDK2VwBCIEIJsIjpj3OJxQ8E1k1uzM1KHxX0H7u+5kzkJboB7MTklh
------END PRIVATE KEY-----
-"#;
-    const PUBLIC_KEY: &[u8] = br#"-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
------END PUBLIC KEY-----
-"#;
 
     const TEST_CLUSTER: &str = "0de031da-e8d9-43de-bb39-7c8bd4d9855c";
     const TEST_INFOBASE: &str = "320f6387-89b5-43fc-b344-67b11f957472";
@@ -755,11 +774,8 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
 
     fn gate() -> MaskingGate {
         let dir = tempfile::tempdir().unwrap();
-        let public_key_path = dir.path().join("broker.pub.pem");
-        std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
         let config = MaskingConfig {
             enabled: true,
-            broker_public_key_path: public_key_path,
             ..MaskingConfig::default()
         };
         MaskingGate::from_config(&config, dir.path()).unwrap()
@@ -805,37 +821,112 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
         }
     }
 
-    fn assertion(jti: &str, lifetime_secs: usize) -> String {
-        let now = chrono::Utc::now().timestamp() as usize;
-        encode(
-            &Header::new(Algorithm::EdDSA),
-            &json!({
-                "conversation_id": "conversation-opaque",
-                "jti": jti,
-                "iat": now,
-                "exp": now + lifetime_secs,
-                "aud": "v8-session-manager",
-                "iss": "trusted-mcp-broker"
-            }),
-            &EncodingKey::from_ed_pem(PRIVATE_KEY).unwrap(),
-        )
-        .unwrap()
+    #[test]
+    fn caller_label_is_bounded_and_sanitized_audit_attribute() {
+        let caller = CallerInfo {
+            mcp_session_id: Some("0123456789abcdef".to_owned()),
+            client_name: Some("claude-code".to_owned()),
+            client_version: Some("2.1.0".to_owned()),
+        };
+        assert_eq!(
+            caller.label().as_deref(),
+            Some("claude-code/2.1.0 #01234567")
+        );
+        assert_eq!(CallerInfo::default().label(), None);
+        let hostile = CallerInfo {
+            mcp_session_id: None,
+            client_name: Some(format!("bad\nname{}", "x".repeat(400))),
+            client_version: None,
+        };
+        let label = hostile.label().unwrap();
+        assert_eq!(label.chars().count(), MAX_CALLER_LABEL_CHARS);
+        assert!(!label.chars().any(char::is_control));
+        assert!(label.starts_with("bad?name"));
     }
 
     #[test]
-    fn conversation_assertion_is_short_lived_and_replay_protected() {
-        let gate = gate();
-        let token = assertion("unique-jti", 60);
+    fn legacy_chat_scoped_outbox_is_converted_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(TERMINAL_OUTBOX_FILE);
+        let kept_call = Uuid::new_v4().to_string();
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "schema_version": 1,
+                "events": [
+                    {
+                        "schema_version": 1,
+                        "call_id": kept_call,
+                        "correlation_id": Uuid::new_v4().to_string(),
+                        "tool_name": "execute_query",
+                        "error_code": "SERVICE_NOT_READY",
+                        "scope": {
+                            "kind": "verified",
+                            "instance_id": "ras:a:b",
+                            "cluster_server": "srv",
+                            "infobase_name": "ib",
+                            "chat_id": "legacy-conversation"
+                        }
+                    },
+                    {
+                        "schema_version": 1,
+                        "call_id": Uuid::new_v4().to_string(),
+                        "correlation_id": Uuid::new_v4().to_string(),
+                        "tool_name": "execute_query",
+                        "error_code": "CHAT_IDENTITY_REQUIRED",
+                        "scope": {"kind": "unverified"}
+                    }
+                ]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let outbox = TerminalOutbox::load(path.clone()).unwrap();
+        assert_eq!(outbox.events.len(), 1);
+        assert_eq!(outbox.events[0].call_id, kept_call);
         assert_eq!(
-            gate.verify_conversation_assertion(&token)
-                .unwrap()
-                .conversation_id,
-            "conversation-opaque"
+            outbox.events[0].scope,
+            TerminalScope::Verified {
+                instance_id: "ras:a:b".to_owned(),
+                cluster_server: "srv".to_owned(),
+                infobase_name: "ib".to_owned(),
+                caller: None,
+            }
         );
-        assert!(gate.verify_conversation_assertion(&token).is_none());
-        assert!(gate
-            .verify_conversation_assertion(&assertion("too-long", 301))
-            .is_none());
+        let persisted = std::fs::read_to_string(&path).unwrap();
+        assert!(!persisted.contains("chat_id"));
+        assert!(!persisted.contains("CHAT_IDENTITY_REQUIRED"));
+        // Повторная загрузка — уже текущий формат.
+        assert_eq!(TerminalOutbox::load(path).unwrap().events.len(), 1);
+    }
+
+    #[test]
+    fn legacy_outbox_with_unknown_top_level_field_is_rejected_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(TERMINAL_OUTBOX_FILE);
+        let bytes = serde_json::to_vec(&json!({
+            "schema_version": 1,
+            "unexpected": true,
+            "events": [{
+                "schema_version": 1,
+                "call_id": Uuid::new_v4().to_string(),
+                "correlation_id": Uuid::new_v4().to_string(),
+                "tool_name": "execute_query",
+                "error_code": "SERVICE_NOT_READY",
+                "scope": {
+                    "kind": "verified",
+                    "instance_id": "ras:a:b",
+                    "cluster_server": "srv",
+                    "infobase_name": "ib",
+                    "chat_id": "legacy-conversation"
+                }
+            }]
+        }))
+        .unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(TerminalOutbox::load(path.clone()).is_err());
+        // Повреждённый файл не перезаписывается конвертером.
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 
     #[test]
@@ -900,7 +991,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             call_id: Uuid::new_v4().to_string(),
             correlation_id: Uuid::new_v4().to_string(),
             tool_name: "execute_query".to_owned(),
-            error_code: "CHAT_IDENTITY_REQUIRED".to_owned(),
+            error_code: "DATABASE_IDENTITY_UNVERIFIED".to_owned(),
             scope: TerminalScope::Unverified,
         };
         let mut outbox = TerminalOutbox::load(path.clone()).unwrap();
@@ -995,14 +1086,11 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     #[tokio::test]
     async fn terminal_outbox_survives_restart_and_replays_only_safe_wire() {
         let dir = tempfile::tempdir().unwrap();
-        let public_key_path = dir.path().join("broker.pub.pem");
         let socket_path = dir.path().join("masking.sock");
-        std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
         let config = MaskingConfig {
             enabled: true,
             socket_path: socket_path.clone(),
             preflight_timeout_ms: 100,
-            broker_public_key_path: public_key_path,
             ..MaskingConfig::default()
         };
         let event = TerminalRequest {
@@ -1010,7 +1098,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             call_id: Uuid::new_v4().to_string(),
             correlation_id: Uuid::new_v4().to_string(),
             tool_name: "execute_query".to_owned(),
-            error_code: "CHAT_IDENTITY_REQUIRED".to_owned(),
+            error_code: "DATABASE_IDENTITY_UNVERIFIED".to_owned(),
             scope: TerminalScope::Unverified,
         };
 
@@ -1072,14 +1160,11 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     #[tokio::test]
     async fn finalize_transport_failure_persists_only_safe_terminal_event() {
         let dir = tempfile::tempdir().unwrap();
-        let public_key_path = dir.path().join("broker.pub.pem");
-        std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
         let config = MaskingConfig {
             enabled: true,
             socket_path: dir.path().join("service-not-running.sock"),
             preflight_timeout_ms: 100,
             finalize_timeout_ms: 100,
-            broker_public_key_path: public_key_path,
             ..MaskingConfig::default()
         };
         let gate = MaskingGate::from_config(&config, dir.path()).unwrap();
@@ -1087,7 +1172,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             call_id: Uuid::new_v4().to_string(),
             correlation_id: Uuid::new_v4().to_string(),
             database: test_identity("test-ib"),
-            chat_id: "opaque-chat".to_owned(),
+            caller: Some("client/1.0 #0123abcd".to_owned()),
             tool_name: "execute_query".to_owned(),
         };
         let failure = gate
@@ -1118,7 +1203,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
                 instance_id: context.database.instance_id.clone(),
                 cluster_server: context.database.cluster_server.clone(),
                 infobase_name: context.database.infobase_name.clone(),
-                chat_id: context.chat_id.clone(),
+                caller: context.caller.clone(),
             }
         );
     }
@@ -1126,21 +1211,18 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
     #[tokio::test]
     async fn preflight_service_not_ready_is_recorded_through_terminal_route() {
         let dir = tempfile::tempdir().unwrap();
-        let public_key_path = dir.path().join("broker.pub.pem");
         let socket_path = dir.path().join("masking.sock");
-        std::fs::write(&public_key_path, PUBLIC_KEY).unwrap();
         let config = MaskingConfig {
             enabled: true,
             socket_path: socket_path.clone(),
             preflight_timeout_ms: 500,
-            broker_public_key_path: public_key_path,
             ..MaskingConfig::default()
         };
         let context = MaskingCallContext {
             call_id: Uuid::new_v4().to_string(),
             correlation_id: Uuid::new_v4().to_string(),
             database: test_identity("test-ib"),
-            chat_id: "opaque-chat".to_owned(),
+            caller: Some("client/1.0 #0123abcd".to_owned()),
             tool_name: "execute_query".to_owned(),
         };
 
@@ -1233,7 +1315,7 @@ MCowBQYDK2VwAyEAqb56A5d3wWE6xz7XETMTTzhooYvBDkfqBuwYtYdMmvY=
             call_id: Uuid::new_v4().to_string(),
             correlation_id: Uuid::new_v4().to_string(),
             database: test_identity("test-ib"),
-            chat_id: "opaque-chat".to_owned(),
+            caller: Some("client/1.0 #0123abcd".to_owned()),
             tool_name: "execute_query".to_owned(),
         };
         let event = MaskingGate::verified_terminal(&context, "SERVICE_WARMING_UP");

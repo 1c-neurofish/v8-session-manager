@@ -31,7 +31,7 @@
 | `src/session_manager/transport.rs` | WS-транспорт | axum + tokio-tungstenite на `:4000/sessions`. Принимает WS, ведёт reader/writer таски, шлёт RFC 6455 Ping для liveness, дёргает реестр на регистрацию/disconnect/reconnect. |
 | `src/session_manager/registry.rs` | `SessionRegistry` | In-memory реестр сессий: `client_uid` → `SessionRecord` (prefix, generation, tools, статус, `last_inbound_at`, `last_call_at`). Под `Arc`, шарится между транспортами. |
 | `src/session_manager/dispatcher.rs` | per-session FIFO | `SessionDispatcher` для каждой сессии: последовательная очередь tool-вызовов, inflight-счётчик, idle-bump (ADR-0021, ADR-0024). |
-| `src/session_manager/masking/` | security gate | Typed HTTP/1.1 client по UDS, проверка session-name identity и trusted conversation JWT, preflight до WS dispatch и atomic finalize после terminal outcome. |
+| `src/session_manager/masking/` | security gate | Typed HTTP/1.1 client по UDS, проверка identity базы сессии, атрибут аудита вызывающего (`caller`), preflight до WS dispatch и atomic finalize после terminal outcome. |
 | `src/session_manager/masking/internal.rs` | internal endpoint | UDS `POST /internal/v1/tools/call` для сервиса маскирования: peer-UID gate, session→database resolution по конфигу, dispatch настроенных internal tools в 1С. |
 | `src/session_manager/protocol.rs` | JSON-RPC 2.0 | Envelope + методы control-plane: `session.register`, `session.bye`, `tools/publish`, `tools/list_changed` (ADR-0023). |
 | `src/session_manager/lifecycle.rs` | sweepers | Idle-sweeper по `idle_timeout_secs`, grace-sweeper по `reconnection_grace_secs` для удаления отключённых записей. |
@@ -64,8 +64,8 @@
 классификацией в админке сервиса, а не конфигом менеджера — устаревший
 `managed_tools` на маршрут не влияет). Перед шагом 3 manager проверяет
 сначала привязку session → `database_id` (непривязанная сессия отклоняется
-`DATABASE_IDENTITY_UNVERIFIED` даже без broker assertion), затем broker
-assertion, затем выполняет service preflight. После шага 4 manager извлекает
+`DATABASE_IDENTITY_UNVERIFIED`), затем выполняет service preflight;
+вызывающий передаётся только как атрибут аудита `caller`. После шага 4 manager извлекает
 конверт результата, если он есть; результат без конверта границы данных
 передаётся сервису как непрозрачный JSON с пустыми `field_sources`, а
 сломанный конверт — как безопасный отказ. Агент получает только
