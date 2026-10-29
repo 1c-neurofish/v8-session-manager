@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "upstream_tools": [
+    "attach",
+    "detach",
+    "get_targets",
+    "set_breakpoints",
+    "clear_breakpoints",
+    "continue",
+    "step_in",
+    "step_out",
+    "pause",
+    "wait_for_stop",
+    "get_variables",
+    "evaluate",
+    "raw_request",
+    "reload_metadata",
+    "get_performance_measurement",
+    "get_call_stack"
+  ],
+  "unpublished": [],
+  "base": "gbig_pam_ai",
+  "cluster_server": "onec-infra",
+  "source_evidence": {},
+  "masking": "downstream_dictionary_and_secret_cut",
+  "caller_retarget": false,
+  "automatic_retry": false
+}

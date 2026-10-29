@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+tests/*-red-result.txt
+!deploy/Dockerfile.patch
+!deploy/Dockerfile.target

@@ -349,3 +349,7 @@ endpoint; сам `session.register` отдельной криптографич�
 ## Лицензия
 
 GNU Affero General Public License v3.0. См. `LICENSE`.
+
+## SDK stdio ↔ WS adapters
+
+[adapters/stdio-ws](adapters/stdio-ws/README.md) — canonical Python adapter внешних SDK Testpilot/debugger16 → existing WS registration → manager → DataMask. Rust manager core не меняется, сам adapter не запускает1C. Qualified deployment сохраняет GBIG DEV paths/policy; private runtime/config/credentials не входят в repository. Compatibility directory symlink в GBIG сохраняет прежние команды без второй реализации. [Происхождение и dependencies](adapters/stdio-ws/NOTICE.md).

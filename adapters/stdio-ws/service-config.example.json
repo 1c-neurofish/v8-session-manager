@@ -1,0 +1,12 @@
+{
+  "manager_ws_url": "ws://127.0.0.1:4000/sessions",
+  "manager_config_file": "/home/vscode/.codex/config.toml",
+  "testpilot_command": "/home/vscode/.local/share/1c-testpilot/venv/bin/1c-testpilot",
+  "testpilot_args": [],
+  "server_version": "1.30.0",
+  "descriptor_sha256": "14b6d37d902dc381bc5e79b9d0b8c894990e68af244f19da62596fb6fbb318bd",
+  "startup_timeout_s": 30,
+  "call_timeout_s": 60,
+  "shutdown_timeout_s": 10,
+  "max_frame_bytes": 1048576
+}

@@ -1,0 +1,2175 @@
+{
+ "source": {
+  "path": "/home/vscode/.local/share/1c-testpilot/source",
+  "gitSHA": "d8cfbba615c7f0654277b6abac9e3ab6ccd8640c",
+  "package": "1c-testpilot 1.9.0",
+  "method": "static _ACTIONS introspection via installed venv, register() filter reproduced; no MCP calls, no client connects"
+ },
+ "profile": {
+  "TC_PLATFORM_VERSION": "8.3.27.2074",
+  "TC1C_SCREENSHOTS": "false",
+  "TC1C_LOGGING": "false",
+  "TC1C_CODE_EXECUTION": "false",
+  "TC1C_QUERY_EXECUTION": "false",
+  "TC1C_FUNCTIONS": "false",
+  "TC1C_METADATA": "false",
+  "TC1C_RESPONSE_FORMAT": "json"
+ },
+ "tool_count": 10,
+ "action_count": 153,
+ "observed_counts_match_install_smoke": true,
+ "response_note": "screenshots OFF -> no ImageContent in this profile; WS bridge Text/Json only regardless",
+ "masker_note": "granularity = exact tool_name (no per-action class); candidate data-mask per source UI mapping «Маскировать»/«Маскировать данные»; unknown mapping = STOP, no no-mask guess",
+ "unpublished_in_profile": {
+  "tools_excluded_by_feature_flags": [
+   "tc_execute_code",
+   "tc_execute_query",
+   "tc_get_metadata",
+   "tc_run_compatible_scenario",
+   "tc_list_custom_bsl_functions",
+   "tc_execute_custom_bsl_function"
+  ],
+  "actions_excluded": {
+   "tc_app": [
+    {
+     "get_screenshot": "screenshots_off"
+    }
+   ],
+   "tc_session": [
+    {
+     "start_logging": "logging_off"
+    },
+    {
+     "stop_logging": "logging_off"
+    },
+    {
+     "get_logging_status": "logging_off"
+    }
+   ],
+   "tc_table": [
+    {
+     "get_current_row": "requires platform >= 8.5.1"
+    },
+    {
+     "select_row": "requires platform >= 8.5.1"
+    },
+    {
+     "deselect_row": "requires platform >= 8.5.1"
+    },
+    {
+     "deselect_all_rows": "requires platform >= 8.5.1"
+    }
+   ]
+  },
+  "note": "full source defines 16 groups / 161 actions; observed profile publishes 10/153"
+ },
+ "runtime_status": "NOT_RUN (inventory only; no tool calls)",
+ "tools": {
+  "tc_app": {
+   "action_count": 9,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "clear_file_dialog_result",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Clear a previously set file-dialog result.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.25"
+    },
+    {
+     "action": "get_active_window",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Read the active window: key/class/title/platform_version, optional",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_child_objects",
+     "required_args": [],
+     "optional_args": [
+      "ref",
+      "scope"
+     ],
+     "purpose": "Read one level: parent and children: [...], with class/title and optional name/type/form_name.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_current_error",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Get info about the session's last CLIENT error (none → null). error is the main description;",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_max_action_time",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Get the max action-execution time in seconds (set via tc_set_max_action_time; None if unset).",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": null
+    },
+    {
+     "action": "get_parent",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get an element's parent in parent: [...]. The server resolves the parent's own address",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.24"
+    },
+    {
+     "action": "get_performance",
+     "required_args": [],
+     "optional_args": [
+      "clear"
+     ],
+     "purpose": "Get accumulated session performance counters (calls, duration, sent, received).",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "set_file_dialog_result",
+     "required_args": [],
+     "optional_args": [
+      "result",
+      "filename",
+      "filter_index"
+     ],
+     "purpose": "Predefine the NEXT file dialog: result=true with filename (or a list for multiple files)",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.8"
+    },
+    {
+     "action": "set_max_action_time",
+     "required_args": [
+      "seconds"
+     ],
+     "optional_args": [],
+     "purpose": "Set the max action-execution time in seconds: how long a result-returning action may take",
+     "side_effect": "config_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": null
+    }
+   ]
+  },
+  "tc_calendar": {
+   "action_count": 5,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "calendar_next_month",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Move a calendar field to the next month. The command is accepted, but nothing readable about",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "calendar_next_year",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Move a calendar field to the next year. The command is accepted, but nothing readable about",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "calendar_previous_month",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Move a calendar field to the previous month. The command is accepted, but nothing readable about",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "calendar_previous_year",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Move a calendar field to the previous year. The command is accepted, but nothing readable about",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_date",
+     "required_args": [
+      "ref",
+      "year",
+      "month",
+      "day"
+     ],
+     "optional_args": [],
+     "purpose": "Go to a date (year, month, day) in a calendar field. Returns changed/value_before/value_after.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    }
+   ]
+  },
+  "tc_doc": {
+   "action_count": 21,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "begin_edit_current_area",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Start editing the current spreadsheet area; follow with input_text and end_edit_current_area.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "click_formatted_doc_hyperlink",
+     "required_args": [
+      "ref",
+      "index"
+     ],
+     "optional_args": [],
+     "purpose": "Click a hyperlink in a formatted-document field by 0-based index (or by its text). On a",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.25"
+    },
+    {
+     "action": "click_formatted_string_hyperlink",
+     "required_args": [
+      "ref",
+      "index"
+     ],
+     "optional_args": [],
+     "purpose": "Click a hyperlink in a formatted string by 0-based index (or by its text). key/handle may",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.13"
+    },
+    {
+     "action": "click_html_hyperlink",
+     "required_args": [
+      "ref",
+      "index"
+     ],
+     "optional_args": [],
+     "purpose": "Click an HTML link. The platform may open the FIRST link regardless of an in-range index;",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.25"
+    },
+    {
+     "action": "end_edit_current_area",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "cancel"
+     ],
+     "purpose": "Finish editing the current spreadsheet-document area. Set cancel to discard the edit",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "find_text",
+     "required_args": [
+      "ref",
+      "text"
+     ],
+     "optional_args": [
+      "match",
+      "case_sensitive",
+      "area",
+      "start_address",
+      "max_cells"
+     ],
+     "purpose": "Find literal spreadsheet text (match=contains/exact, case-insensitive by default); return cell",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.13"
+    },
+    {
+     "action": "get_area_text",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "area"
+     ],
+     "purpose": "Get the text of ONE spreadsheet-document area; omit area to read the current one.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "get_current_area_address",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the address of the current spreadsheet-document area.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "get_current_area_field",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the field of the current spreadsheet-document area.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.2"
+    },
+    {
+     "action": "get_current_area_text",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "area"
+     ],
+     "purpose": "Get the text of ONE spreadsheet-document area; omit area to read the current one. This is the",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "get_doc_area_horizontal_size",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the horizontal size (max column number holding data) of a spreadsheet-document.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.13"
+    },
+    {
+     "action": "get_doc_area_vertical_size",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the vertical size (max row number holding data) of a spreadsheet-document.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.13"
+    },
+    {
+     "action": "get_formatted_string_hyperlinks",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get a formatted string's hyperlink presentations.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.25"
+    },
+    {
+     "action": "get_html",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Read the HTML of a formatted/HTML-document field. After the form has put up a menu or a",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.8"
+    },
+    {
+     "action": "included_in_merged_area",
+     "required_args": [
+      "ref",
+      "address"
+     ],
+     "optional_args": [],
+     "purpose": "Return the address of the merged area containing the cell (e.g. 'R1C1'), or None if the",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.25"
+    },
+    {
+     "action": "input_html",
+     "required_args": [
+      "ref",
+      "html"
+     ],
+     "optional_args": [
+      "attachments"
+     ],
+     "purpose": "Set HTML/text into a formatted-document field. attachments maps an image name used in",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.8"
+    },
+    {
+     "action": "read_document",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "start_address",
+      "max_cells",
+      "area"
+     ],
+     "purpose": "Read nonempty spreadsheet cells as rows with cell addresses and merged-cell spans.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": null
+    },
+    {
+     "action": "set_area_text",
+     "required_args": [
+      "ref",
+      "address",
+      "text"
+     ],
+     "optional_args": [],
+     "purpose": "Set a spreadsheet cell's text by address, e.g. R2C1. Selects the cell, starts and",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": null
+    },
+    {
+     "action": "set_current_area",
+     "required_args": [
+      "ref",
+      "address"
+     ],
+     "optional_args": [],
+     "purpose": "Set the current area of a spreadsheet-document field (e.g. 'R1C1').",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "text_within_area_bounds",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "area"
+     ],
+     "purpose": "Whether the text in a spreadsheet-document area fits within its bounds (True) or is",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.25"
+    },
+    {
+     "action": "write_content_to_file",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "filename",
+      "file_format",
+      "filter_index",
+      "save_as"
+     ],
+     "purpose": "Save HTML/formatted/spreadsheet/text fields (not PDF fields). filename forces Save As, replacing",
+     "side_effect": "file_write",
+     "response": "text+json",
+     "probe_disposition": "pending",
+     "min_platform_version": "8.3.8"
+    }
+   ]
+  },
+  "tc_field": {
+   "action_count": 43,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "activate",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Focus an element, switch a page or make a table column current; click does not do this. Commits",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": null
+    },
+    {
+     "action": "cancel_edit",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Cancel pending input, like Esc. Does not undo values accepted by input_text(finish=true)",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "choose_from_drop_list",
+     "required_args": [
+      "ref",
+      "value"
+     ],
+     "optional_args": [],
+     "purpose": "Pick a value from a field's open drop-down list by its display text (e.g. a colour name)",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "clear",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Clear an input field's value.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "click",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "diagnostics",
+      "diagnostics_wait"
+     ],
+     "purpose": "Click a button, field, group, decoration or command-interface button.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "click_view_status_item",
+     "required_args": [
+      "ref",
+      "index"
+     ],
+     "optional_args": [],
+     "purpose": "Click a view-status item by 0-based index (or by its text). Nothing here proves the item",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.16"
+    },
+    {
+     "action": "close_drop_list",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Close a field's drop-down list. Verify with tc_field(action=\"drop_list_is_open\").",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "create",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Create a new object from a reference field: opens the new object's form, as the field's",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "current_check",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Whether a form BUTTON is pressed, or shows a check mark next to it. Only buttons answer",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.16"
+    },
+    {
+     "action": "current_mode_is_edit",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Whether a table row or spreadsheet-document field is currently in edit mode.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "current_opened",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Whether a form group is currently open.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.16"
+    },
+    {
+     "action": "decrease_value",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Decrement a numeric (spinner) field. A track bar does NOT take this — move it with",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "delete_view_status_item",
+     "required_args": [
+      "ref",
+      "index"
+     ],
+     "optional_args": [],
+     "purpose": "Delete a view-status item by 0-based index (or by its text) — this is how a filter or a",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.16"
+    },
+    {
+     "action": "drop_list_is_open",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Whether a field's drop-down list is open.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "execute_choice_from_choice_list",
+     "required_args": [
+      "ref",
+      "value"
+     ],
+     "optional_args": [],
+     "purpose": "Pick from a field's choice list by its display text or by its 0-based index. Reports",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "get_choice_list",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Read radio-button options, an input's open drop-down list or a form's open choice list. For an input, open its list",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "get_command_bar",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get an element's own command panel object, if it has one. This is NOT the list of buttons:",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_context_menu",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get an element's context menu. The platform returns the menu as a form GROUP, not as a list",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_current_page",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the current page of a page group. To switch pages use tc_activate: a click on a page",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "get_data_presentation",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get an element's data presentation. Form fields only — not form decorations, and on a table",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "get_edit_text",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Read an input field's edit buffer — what is being typed, which is not necessarily what the",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_linked_window",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the linked window of a command-interface button. An empty answer means the button has",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "get_state_presentation",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Read a form field's state presentation. An unavailable value is explained in the answer;",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.16"
+    },
+    {
+     "action": "get_text",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Read displayed text (checkbox text follows the client language). An empty input or label field",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "get_tooltip",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Read an element's tooltip text (empty → None).",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_view_status_item_texts",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the view-status item texts of a form-element addition → list of strings. Do not use it",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.16"
+    },
+    {
+     "action": "goto_value",
+     "required_args": [
+      "ref",
+      "percent"
+     ],
+     "optional_args": [],
+     "purpose": "Move a TRACK BAR to a value in PERCENT (0..100). This is a track bar method: on any other",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "increase_value",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Increment a numeric (spinner) field. A track bar does NOT take this — move it with",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "input_text",
+     "required_args": [
+      "ref",
+      "text"
+     ],
+     "optional_args": [
+      "finish"
+     ],
+     "purpose": "Enter text; text=\"\" clears. finish=true moves the owning form's focus once and verifies ordinary",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "is_enabled",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Read the element's availability. A command can still refuse execution in the current form state.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "is_readonly",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Whether an element is currently read-only — that is the element's own read-only property.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "is_visible",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Whether an element is currently visible. Returns an error instead of visible=false when",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "open_drop_list",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Open the drop-down list of a reference/enum field (call before choose_from_drop_list).",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "open_field",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Open a reference field's value (F4 / follow the link).",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "read_fields",
+     "required_args": [
+      "targets"
+     ],
+     "optional_args": [
+      "properties"
+     ],
+     "purpose": "Read 1–100 fields of the active form without moving focus. properties defaults to ['text'];",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "select_option",
+     "required_args": [
+      "ref",
+      "value"
+     ],
+     "optional_args": [],
+     "purpose": "Pick a radio-button option by its display text or by its 0-based index.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "select_value",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "value",
+      "match",
+      "choice_table",
+      "choice_column",
+      "data_type",
+      "expected",
+      "max_rows",
+      "timeout"
+     ],
+     "purpose": "Select exact value text (drop-down first) or match={column title: exact text} in a choice form.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "set_check",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Toggle a checkbox field. Inside a table this acts on the column that is the CURRENT cell,",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "set_fields",
+     "required_args": [
+      "entries"
+     ],
+     "optional_args": [],
+     "purpose": "Fill 1..100 input fields or checkboxes in one active form, in order.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "start_choosing",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Open a reference field's choice form. Handles focus and table-cell editing.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "start_choosing_from_choice_list",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Start choosing from a field's choice list.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "title_is_shown",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Whether an element's title is shown.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.25"
+    },
+    {
+     "action": "wait_for_drop_list_generation",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "timeout"
+     ],
+     "purpose": "Wait timeout seconds (integer 0..65535) for a generated drop-down; returns generated. The result",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.4"
+    }
+   ]
+  },
+  "tc_find": {
+   "action_count": 3,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "find_object",
+     "required_args": [],
+     "optional_args": [
+      "name",
+      "cls",
+      "type",
+      "root_ref",
+      "title",
+      "timeout",
+      "scope"
+     ],
+     "purpose": "Find the first object matching the criteria (parameters as in tc_find_objects). When",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "find_objects",
+     "required_args": [],
+     "optional_args": [
+      "name",
+      "cls",
+      "type",
+      "root_ref",
+      "title",
+      "timeout",
+      "scope",
+      "limit",
+      "cursor"
+     ],
+     "purpose": "Search UI objects: name/title support * ?; cls/type use discovered class/platform kind",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "wait_for_object_displayed",
+     "required_args": [],
+     "optional_args": [
+      "name",
+      "cls",
+      "type",
+      "title",
+      "timeout"
+     ],
+     "purpose": "Poll the UI tree until an object matching the criteria appears, up to timeout seconds.",
+     "side_effect": "wait_poll",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    }
+   ]
+  },
+  "tc_form": {
+   "action_count": 13,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "compare_snapshot",
+     "required_args": [
+      "snapshot_id"
+     ],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "Compare the original form instance with its baseline; optional key must identify the same",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "create_snapshot",
+     "required_args": [],
+     "optional_args": [
+      "ref",
+      "include_tables",
+      "max_rows"
+     ],
+     "purpose": "Save ManagedForm state (default active) for later compare_snapshot; returns snapshot_id/summary.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "current_modified",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Whether a form has been modified.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "delete_snapshot",
+     "required_args": [
+      "snapshot_id"
+     ],
+     "optional_args": [],
+     "purpose": "Delete a saved snapshot belonging to this connection.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": null
+    },
+    {
+     "action": "execute_choice_from_list",
+     "required_args": [
+      "ref",
+      "index"
+     ],
+     "optional_args": [],
+     "purpose": "Pick an item from a modal choice list by 0-based index or display text. Not a field's",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.8"
+    },
+    {
+     "action": "execute_choice_from_menu",
+     "required_args": [
+      "ref",
+      "index"
+     ],
+     "optional_args": [],
+     "purpose": "Choose an item from an open menu by 0-based index or display text. For a submenu,",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.8"
+    },
+    {
+     "action": "find_default_button",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Find the form's default button. key is the form's key.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_context",
+     "required_args": [],
+     "optional_args": [
+      "ref",
+      "save_as_snapshot",
+      "include_tables",
+      "max_rows",
+      "root_ref",
+      "visible_only",
+      "include_commands",
+      "result_mode"
+     ],
+     "purpose": "Inspect ManagedForm elements (including hidden), state, values and input context; includes",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_current_element",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the managed form's focused element as item: [{key, handle}]. key/handle: the form",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_next_element",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Move focus to the next element in the managed form's tab order. key/handle: the form",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_previous_element",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Move focus to the previous element in the managed form's tab order. key/handle: the form",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "list_snapshots",
+     "required_args": [],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "List saved snapshots for this connection, optionally restricted to one ManagedForm key.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": null
+    },
+    {
+     "action": "wait_for_closing",
+     "required_args": [],
+     "optional_args": [
+      "window_title",
+      "timeout"
+     ],
+     "purpose": "Wait until a window closes, up to timeout seconds. Without window_title, watch the window",
+     "side_effect": "wait_poll",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    }
+   ]
+  },
+  "tc_scenario": {
+   "action_count": 6,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "record_cancel",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Cancel user-actions recording (discard the scenario).",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.2"
+    },
+    {
+     "action": "record_finish",
+     "required_args": [],
+     "optional_args": [
+      "path"
+     ],
+     "purpose": "Stop recording; return XML in uilog or save path (relative to SERVER working directory; returns",
+     "side_effect": "file_write",
+     "response": "text+json",
+     "probe_disposition": "pending",
+     "min_platform_version": "8.3.2"
+    },
+    {
+     "action": "record_pause",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Pause user-actions recording: actions performed until tc_record_resume stay out of the",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.2"
+    },
+    {
+     "action": "record_resume",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Resume user-actions recording.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.2"
+    },
+    {
+     "action": "record_start",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Start recording a scenario (uilog) that tc_run_scenario can replay later. Perform the real,",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.2"
+    },
+    {
+     "action": "run_scenario",
+     "required_args": [],
+     "optional_args": [
+      "uilog",
+      "path",
+      "result_mode"
+     ],
+     "purpose": "Replay uilog XML or path on the current form. Unsupported steps are skipped/listed; first",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "pending",
+     "min_platform_version": null
+    }
+   ]
+  },
+  "tc_session": {
+   "action_count": 6,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "connect",
+     "required_args": [],
+     "optional_args": [
+      "port",
+      "host",
+      "version",
+      "profile"
+     ],
+     "purpose": "Connect to a running /TESTCLIENT -TPort client using port or a list_profiles profile; explicit",
+     "side_effect": "session_control",
+     "response": "text+json",
+     "probe_disposition": "pending",
+     "min_platform_version": null
+    },
+    {
+     "action": "disconnect",
+     "required_args": [],
+     "optional_args": [
+      "force"
+     ],
+     "purpose": "Close the connection to the test client. force=true interrupts a pending network call;",
+     "side_effect": "session_control",
+     "response": "text+json",
+     "probe_disposition": "pending",
+     "min_platform_version": null
+    },
+    {
+     "action": "launch_client",
+     "required_args": [],
+     "optional_args": [
+      "base",
+      "port",
+      "server",
+      "user",
+      "password",
+      "version",
+      "exe",
+      "extra_args",
+      "wait",
+      "connect",
+      "desktop",
+      "profile"
+     ],
+     "purpose": "Launch and optionally connect. base is a file infobase path, or 'server\\infobase' with",
+     "side_effect": "session_control",
+     "response": "text+json",
+     "probe_disposition": "pending",
+     "min_platform_version": null
+    },
+    {
+     "action": "list_connections",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "List registered clients with connection_id, profile, host, port, base, user and recording status.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": null
+    },
+    {
+     "action": "list_profiles",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "List named launch/connect profiles and their descriptions and settings, without passwords.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": null
+    },
+    {
+     "action": "stop_client",
+     "required_args": [],
+     "optional_args": [
+      "graceful_timeout"
+     ],
+     "purpose": "Stop the test client started by launch_client in this connection, and disconnect from it.",
+     "side_effect": "session_control",
+     "response": "text+json",
+     "probe_disposition": "pending",
+     "min_platform_version": null
+    }
+   ]
+  },
+  "tc_table": {
+   "action_count": 35,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "add_rows",
+     "required_args": [
+      "ref",
+      "rows"
+     ],
+     "optional_args": [],
+     "purpose": "Add and fill 1–100 rows: rows=[{cells:[{column: element name, text: ...}]}], at most 1000 cells.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "can_be_expanded",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "row_column",
+      "row_value"
+     ],
+     "purpose": "Whether a table row/group can be expanded. Pass row_column+row_value to target a",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "change_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Start editing the current table row/column. Activate the intended column first.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "choose_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Choose/double-click the current row: selects and closes a choice form, opens an item's card in a",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "collapse",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "row_column",
+      "row_value"
+     ],
+     "purpose": "Collapse a form group or table node. For tables, row_column+row_value targets a row by column",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "copy_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "confirm"
+     ],
+     "purpose": "Copy the current table row. On catalog/document",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.25"
+    },
+    {
+     "action": "delete_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "confirm"
+     ],
+     "purpose": "Deprecated alias for delete_rows(scope=\"current\"). Use delete_rows for new calls.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "delete_rows",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "confirm",
+      "scope",
+      "unmark"
+     ],
+     "purpose": "Delete current or selected rows (selected: 8.3.6+, standard context-menu Delete/Mark, preserving",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "end_edit_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "cancel"
+     ],
+     "purpose": "Finish editing the current table row. Set cancel to discard the edits instead of",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "expand",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "row_column",
+      "row_value",
+      "subordinates"
+     ],
+     "purpose": "Expand a form group or table node; subordinates also expands child rows. For tables,",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "find_rows",
+     "required_args": [
+      "ref",
+      "conditions"
+     ],
+     "optional_args": [
+      "columns",
+      "case_sensitive",
+      "max_rows",
+      "max_matches",
+      "text_format"
+     ],
+     "purpose": "Search selectable rows of the CURRENT table, respecting filters/collapsed groups;",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "get_cell_text",
+     "required_args": [
+      "ref",
+      "column"
+     ],
+     "optional_args": [],
+     "purpose": "Read the current row's displayed cell (may contain search markup). column is an element NAME or",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "get_current_item",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Get the current item of a table → {key, handle}. key/handle: the table.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "get_list_settings",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "max_rows",
+      "timeout"
+     ],
+     "purpose": "Read filters and sorting through the list's standard settings form. Closes settings opened by this call.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "get_list_settings_fields",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "section",
+      "max_rows",
+      "timeout"
+     ],
+     "purpose": "List available field captions for filters or orders through the standard list settings.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "get_selected_rows",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Read selected rows as {column title: displayed value} maps. Row order is not guaranteed.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "go_one_level_down",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "row_column",
+      "row_value",
+      "column"
+     ],
+     "purpose": "Go one level down in a table tree. Pass row_column+row_value to target a specific row by a",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "go_one_level_up",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "row_column",
+      "row_value",
+      "column"
+     ],
+     "purpose": "Go one level up in a table tree. Pass row_column+row_value to target a specific row by a",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_first_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "toggle_selection",
+      "column"
+     ],
+     "purpose": "Move to the first row of a table. Set toggle_selection to also toggle that row's selection. Pass",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_last_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "toggle_selection",
+      "column"
+     ],
+     "purpose": "Move to the last row of a table. Set toggle_selection to also toggle that row's selection. Pass",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_next_item",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Move to the next item within a table. key/handle: the table.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_next_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "toggle_selection",
+      "column"
+     ],
+     "purpose": "Move to the next row of a table. Set toggle_selection to also toggle that row's selection. Pass",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_previous_item",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Move to the previous item within a table. key/handle: the table.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_previous_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "toggle_selection",
+      "column"
+     ],
+     "purpose": "Move to the previous row of a table. Set toggle_selection to also toggle that row's selection.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "goto_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "column",
+      "value",
+      "direction",
+      "toggle_selection",
+      "fields"
+     ],
+     "purpose": "Seek by column (displayed TITLE, not index) and value, or fields={title:value} for multiple",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.2"
+    },
+    {
+     "action": "is_expanded",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "row_column",
+      "row_value"
+     ],
+     "purpose": "Whether a table row is expanded. Without row_column this reads the CURRENT row.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.1"
+    },
+    {
+     "action": "read_rows",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "max_rows",
+      "columns",
+      "text_format"
+     ],
+     "purpose": "Read selectable rows within current filters/collapsed groups: row_count and at most max_rows (0:",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "search",
+     "required_args": [
+      "ref",
+      "text"
+     ],
+     "optional_args": [
+      "max_rows",
+      "timeout",
+      "settle_time",
+      "columns",
+      "text_format"
+     ],
+     "purpose": "Set the list's standard search string (empty clears), preserving filters. Returns rows after",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "select_all_rows",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Select all rows of a table.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "set_cell_text",
+     "required_args": [
+      "ref",
+      "column",
+      "text"
+     ],
+     "optional_args": [],
+     "purpose": "Set current-row column by element NAME; manages focus, continues existing row edits, finishes",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": null
+    },
+    {
+     "action": "set_list_settings",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "filters",
+      "orders",
+      "replace",
+      "max_rows",
+      "timeout"
+     ],
+     "purpose": "Apply standard list filters/sorting; field is an exact available caption, value is displayed",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "set_order",
+     "required_args": [
+      "ref",
+      "column"
+     ],
+     "optional_args": [],
+     "purpose": "Sort a table by a column, addressed by its TITLE. There is no direction parameter and no way",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "set_row_values",
+     "required_args": [
+      "ref",
+      "cells"
+     ],
+     "optional_args": [],
+     "purpose": "Fill 1..100 cells of the current row: {column: element NAME, text} or {column, checked}.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.12"
+    },
+    {
+     "action": "switch_row_delete_mark",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [
+      "confirm"
+     ],
+     "purpose": "Toggle the current row's deletion mark; confirm=true answers Yes, false No, null leaves the",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "table_add_row",
+     "required_args": [
+      "ref"
+     ],
+     "optional_args": [],
+     "purpose": "Add a row to a form table. Fill its cells with set_cell_text using column element names.",
+     "side_effect": "data_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.1"
+    }
+   ]
+  },
+  "tc_window": {
+   "action_count": 12,
+   "masker_class_candidate": "data-mask",
+   "masker_ui_label": "Маскировать",
+   "masker_status": "NOT_CONFIGURED",
+   "actions": [
+    {
+     "action": "activate_window",
+     "required_args": [],
+     "optional_args": [],
+     "purpose": "Activate the current active window.",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "answer_dialog",
+     "required_args": [],
+     "optional_args": [
+      "confirm",
+      "timeout"
+     ],
+     "purpose": "Wait up to timeout seconds and answer a modal question: confirm=true presses Button0, false",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "choose_user_message",
+     "required_args": [
+      "text"
+     ],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "Click the first user message matching text in the addressed window (active if omitted); * and ? are wildcards.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "close_user_messages_panel",
+     "required_args": [],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "Close the addressed window's user-messages panel (active if omitted). This hides the panel;",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "close_window",
+     "required_args": [],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "Close the window at key, or the active window if omitted.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "execute_command",
+     "required_args": [
+      "command"
+     ],
+     "optional_args": [],
+     "purpose": "Open a navigation link, e.g. 'e1cib/list/Справочник.Контрагенты', 'e1cib/app/Обработка.Имя'",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "pending",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_command_interface",
+     "required_args": [],
+     "optional_args": [
+      "ref",
+      "all_sections",
+      "section",
+      "search",
+      "limit",
+      "offset",
+      "refresh",
+      "timeout"
+     ],
+     "purpose": "Read the current command tree of key (default: main application window), without clicking.",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "get_user_message_texts",
+     "required_args": [],
+     "optional_args": [
+      "ref",
+      "open_if_closed"
+     ],
+     "purpose": "Read messages from key (active window if omitted). A closed panel is temporarily opened",
+     "side_effect": "read_only",
+     "response": "text+json",
+     "probe_disposition": "syntheticpositive",
+     "min_platform_version": "8.3.3"
+    },
+    {
+     "action": "goto_next_window",
+     "required_args": [],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "Go to the next open window from the addressed main window (active if omitted). The client returns an error if navigation is unavailable.",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "goto_previous_window",
+     "required_args": [],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "Go to the previous open window from the addressed main window (active if omitted). The client returns an error if navigation is unavailable.",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "goto_start_page",
+     "required_args": [],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "Go to the start page from the addressed main window (active if omitted). The client returns an error if navigation is unavailable.",
+     "side_effect": "ui_navigate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    },
+    {
+     "action": "open_user_messages_panel",
+     "required_args": [],
+     "optional_args": [
+      "ref"
+     ],
+     "purpose": "Open key's user-message panel (active window if omitted); an open panel is left open.",
+     "side_effect": "ui_mutate",
+     "response": "text+json",
+     "probe_disposition": "guardednegative",
+     "min_platform_version": "8.3.6"
+    }
+   ]
+  }
+ }
+}

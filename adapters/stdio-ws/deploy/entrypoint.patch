@@ -1,0 +1,18 @@
+--- a/.devcontainer/entrypoint.sh
++++ b/.devcontainer/entrypoint.sh
+@@ -207,6 +207,15 @@
+ }
+ 
+ start_v8_session_manager
++
++#++agent TASK-225 [17.10.2026 12:09:00]
++# Testpilot SDK остаётся STANDBY, native запускает только явный owner.
++if [ -x /usr/local/bin/start-testpilot.sh ]; then
++  if id -u vscode >/dev/null 2>&1; then
++    su -s /bin/bash vscode -c /usr/local/bin/start-testpilot.sh || true
++  fi
++fi
++#++agent TASK-225
+ 
+ start_herdr_server() {
+   # Headless herdr server: the host-side Herdr Mirror (in WSL) attaches via
