@@ -1,0 +1,11 @@
+{
+  "manager_ws_url": "ws://127.0.0.1:8080/ws",
+  "binding_file": "/absolute/private/debugger-binding.json",
+  "descriptor_sha256": "REPLACE_WITH_REVIEWED_UPSTREAM_DESCRIPTOR_SHA256",
+  "sdk_entry_sha256": "REPLACE_WITH_REVIEWED_DIST_INDEX_SHA256",
+  "node_command": "/absolute/path/to/node",
+  "startup_timeout_s": 30,
+  "call_timeout_s": 60,
+  "shutdown_timeout_s": 10,
+  "max_frame_bytes": 1048576
+}

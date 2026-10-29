@@ -1,0 +1,29 @@
+--- a/.devcontainer/Dockerfile
++++ b/.devcontainer/Dockerfile
+@@ -303,6 +303,8 @@
+ COPY ./.devcontainer/bin/agent-open-pr         /usr/local/bin/agent-open-pr
+ COPY ./.devcontainer/bin/start-v8sm.sh         /usr/local/bin/start-v8sm.sh
+ COPY ./.devcontainer/bin/_v8sm-supervisor.sh   /usr/local/bin/_v8sm-supervisor.sh
++COPY ./.devcontainer/bin/start-testpilot.sh    /usr/local/bin/start-testpilot.sh
++COPY ./.devcontainer/bin/_testpilot-supervisor.sh /usr/local/bin/_testpilot-supervisor.sh
+ COPY ./.devcontainer/bin/v8-session-manager    /usr/local/bin/v8-session-manager
+ COPY ./.devcontainer/bin/v8-runner             /usr/local/bin/v8-runner
+ COPY ./.devcontainer/bin/v8sm                  /usr/local/bin/v8sm
+@@ -310,6 +312,8 @@
+       /usr/local/bin/clipboard-watch \
+       /usr/local/bin/start-v8sm.sh \
+       /usr/local/bin/_v8sm-supervisor.sh \
++      /usr/local/bin/start-testpilot.sh \
++      /usr/local/bin/_testpilot-supervisor.sh \
+       /usr/local/bin/v8sm \
+       /usr/local/share/agent-sandbox/postCreateCommand.sh \
+       /usr/local/share/agent-sandbox/entrypoint.sh \
+@@ -333,6 +337,8 @@
+       /usr/local/bin/agent-open-pr \
+       /usr/local/bin/start-v8sm.sh \
+       /usr/local/bin/_v8sm-supervisor.sh \
++      /usr/local/bin/start-testpilot.sh \
++      /usr/local/bin/_testpilot-supervisor.sh \
+       /usr/local/bin/v8-session-manager \
+       /usr/local/bin/v8-runner \
+       /usr/local/bin/v8sm \
